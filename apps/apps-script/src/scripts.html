@@ -1,0 +1,341 @@
+<script>
+  const uiState = {
+    page: 1,
+    pageSize: 20,
+    query: '',
+    status: '',
+    lastPage: 1,
+    searchTimer: null,
+    requestSequence: 0,
+    archivesLoading: false
+  };
+
+  document.addEventListener('DOMContentLoaded', function () {
+    bindUiEvents();
+    loadDashboard();
+  });
+
+  function gas(functionName, ...args) {
+    return new Promise(function (resolve, reject) {
+      const runner = google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject);
+      runner[functionName](...args);
+    });
+  }
+
+  async function loadDashboard() {
+    hideGlobalError();
+    setDashboardBusy(true);
+
+    try {
+      const response = await gas('getDashboardBootstrap');
+      const data = unwrapResponse(response);
+      renderIdentity(data.user);
+      renderPermissions(data.permissions);
+      renderStats(data.stats);
+      renderArchives(data.latest_archives, {
+        current_page: 1,
+        last_page: 1,
+        total: data.stats.total
+      });
+      renderTasks(data.approval_tasks);
+      renderNotificationCount(data.unread_notifications);
+      document.getElementById('generated-at').textContent = 'Diperbarui ' + formatDateTime(data.generated_at);
+
+      const loadFullArchivePage = function () {
+        loadArchives({ force: true });
+      };
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(loadFullArchivePage, { timeout: 700 });
+      } else {
+        window.setTimeout(loadFullArchivePage, 0);
+      }
+    } catch (error) {
+      showGlobalError(normalizeErrorMessage(error));
+    } finally {
+      setDashboardBusy(false);
+    }
+  }
+
+  async function loadArchives(options) {
+    if (uiState.archivesLoading && !options?.force) return;
+
+    const sequence = ++uiState.requestSequence;
+    uiState.archivesLoading = true;
+    setArchiveBusy(true);
+
+    try {
+      const payload = {
+        page: uiState.page,
+        page_size: uiState.pageSize,
+        query: uiState.query,
+        status: uiState.status
+      };
+      const response = await gas('searchArchives', payload);
+      if (sequence !== uiState.requestSequence) return;
+
+      const data = unwrapResponse(response);
+      uiState.lastPage = data.pagination.last_page;
+      renderArchives(data.rows, data.pagination);
+    } catch (error) {
+      if (sequence !== uiState.requestSequence) return;
+      showToast(normalizeErrorMessage(error));
+      document.getElementById('archive-list').innerHTML = '<div class="empty-state">Arsip belum dapat dimuat. Silakan coba lagi.</div>';
+    } finally {
+      if (sequence === uiState.requestSequence) {
+        uiState.archivesLoading = false;
+        setArchiveBusy(false);
+      }
+    }
+  }
+
+  function bindUiEvents() {
+    document.getElementById('retry-button').addEventListener('click', loadDashboard);
+
+    document.getElementById('archive-search').addEventListener('input', function (event) {
+      clearTimeout(uiState.searchTimer);
+      const value = event.target.value;
+      uiState.searchTimer = setTimeout(function () {
+        uiState.query = value.trim();
+        uiState.page = 1;
+        loadArchives({ force: true });
+      }, 300);
+    });
+
+    document.getElementById('status-filter').addEventListener('change', function (event) {
+      uiState.status = event.target.value;
+      uiState.page = 1;
+      loadArchives({ force: true });
+    });
+
+    document.getElementById('page-size').addEventListener('change', function (event) {
+      uiState.pageSize = Number(event.target.value) || 20;
+      uiState.page = 1;
+      loadArchives({ force: true });
+    });
+
+    document.getElementById('previous-page').addEventListener('click', function () {
+      if (uiState.page <= 1) return;
+      uiState.page -= 1;
+      loadArchives({ force: true });
+    });
+
+    document.getElementById('next-page').addEventListener('click', function () {
+      if (uiState.page >= uiState.lastPage) return;
+      uiState.page += 1;
+      loadArchives({ force: true });
+    });
+
+    document.getElementById('upload-button').addEventListener('click', function () {
+      showToast('Form upload akan tersedia pada fase berikutnya.');
+    });
+  }
+
+  function renderIdentity(user) {
+    document.getElementById('user-name').textContent = user.full_name || user.email;
+    document.getElementById('user-role').textContent = formatRole(user.role);
+  }
+
+  function renderPermissions(permissions) {
+    document.getElementById('upload-button').disabled = !permissions.can_upload;
+  }
+
+  function renderStats(stats) {
+    const definitions = [
+      ['Total terlihat', stats.total],
+      ['Draft', stats.draft],
+      ['Validasi L1', stats.pending_l1],
+      ['Validasi L2', stats.pending_l2],
+      ['Final', stats.final]
+    ];
+    const fragment = document.createDocumentFragment();
+
+    definitions.forEach(function (item) {
+      const article = document.createElement('article');
+      article.className = 'stat-card';
+      const label = document.createElement('span');
+      label.className = 'caption';
+      label.textContent = item[0];
+      const value = document.createElement('strong');
+      value.textContent = new Intl.NumberFormat('id-ID').format(item[1] || 0);
+      article.append(label, value);
+      fragment.appendChild(article);
+    });
+
+    document.getElementById('stats-grid').replaceChildren(fragment);
+  }
+
+  function renderArchives(rows, pagination) {
+    const container = document.getElementById('archive-list');
+    const fragment = document.createDocumentFragment();
+
+    if (!rows || rows.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = uiState.query
+        ? 'Tidak ada arsip yang cocok. Coba kata kunci atau filter lain.'
+        : 'Belum ada arsip pada cakupan akses Anda.';
+      fragment.appendChild(empty);
+    } else {
+      rows.forEach(function (archive) {
+        fragment.appendChild(createArchiveItem(archive));
+      });
+    }
+
+    container.replaceChildren(fragment);
+    container.setAttribute('aria-busy', 'false');
+
+    uiState.lastPage = pagination.last_page || 1;
+    document.getElementById('archive-result-summary').textContent =
+      new Intl.NumberFormat('id-ID').format(pagination.total || rows.length) + ' arsip ditemukan';
+    document.getElementById('page-label').textContent =
+      'Halaman ' + (pagination.current_page || 1) + ' dari ' + uiState.lastPage;
+    document.getElementById('previous-page').disabled = uiState.page <= 1;
+    document.getElementById('next-page').disabled = uiState.page >= uiState.lastPage;
+  }
+
+  function createArchiveItem(archive) {
+    const article = document.createElement('article');
+    article.className = 'archive-item';
+
+    const content = document.createElement('div');
+    const number = document.createElement('div');
+    number.className = 'archive-number';
+    number.textContent = archive.archive_number || 'Nomor belum tersedia';
+
+    const title = document.createElement('h3');
+    title.textContent = archive.title || 'Tanpa judul';
+
+    const meta = document.createElement('div');
+    meta.className = 'archive-meta';
+    [
+      archive.division?.name,
+      archive.unit?.name,
+      archive.category?.name,
+      formatDate(archive.archive_date)
+    ].filter(Boolean).forEach(function (value) {
+      const span = document.createElement('span');
+      span.textContent = value;
+      meta.appendChild(span);
+    });
+
+    content.append(number, title, meta);
+
+    const status = document.createElement('span');
+    status.className = 'status-badge status-' + archive.status;
+    status.setAttribute('role', 'status');
+    status.textContent = archive.needs_revision ? 'Draft — Perlu Revisi' : formatStatus(archive.status);
+
+    article.append(content, status);
+    return article;
+  }
+
+  function renderTasks(tasks) {
+    const container = document.getElementById('task-list');
+    const fragment = document.createDocumentFragment();
+    const safeTasks = tasks || [];
+
+    if (safeTasks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'Tidak ada tugas approval yang menunggu.';
+      fragment.appendChild(empty);
+    } else {
+      safeTasks.forEach(function (task) {
+        const item = document.createElement('div');
+        item.className = 'task-item';
+        const label = document.createElement('strong');
+        label.textContent = 'Approval Level ' + task.level;
+        const due = document.createElement('span');
+        due.className = 'caption';
+        due.textContent = 'Batas ' + formatDateTime(task.due_at);
+        item.append(label, due);
+        fragment.appendChild(item);
+      });
+    }
+
+    container.replaceChildren(fragment);
+    container.setAttribute('aria-busy', 'false');
+    document.getElementById('task-count').textContent = safeTasks.length + ' tugas';
+  }
+
+  function renderNotificationCount(count) {
+    const safeCount = Number(count) || 0;
+    document.getElementById('notification-count').textContent = safeCount > 99 ? '99+' : String(safeCount);
+    document.getElementById('notification-button').setAttribute(
+      'aria-label', safeCount + ' notifikasi belum dibaca'
+    );
+  }
+
+  function setDashboardBusy(isBusy) {
+    document.getElementById('main-content').setAttribute('aria-busy', String(isBusy));
+  }
+
+  function setArchiveBusy(isBusy) {
+    document.getElementById('archive-list').setAttribute('aria-busy', String(isBusy));
+    document.getElementById('previous-page').disabled = isBusy || uiState.page <= 1;
+    document.getElementById('next-page').disabled = isBusy || uiState.page >= uiState.lastPage;
+  }
+
+  function showGlobalError(message) {
+    document.getElementById('alert-message').textContent = message;
+    document.getElementById('global-alert').hidden = false;
+  }
+
+  function hideGlobalError() {
+    document.getElementById('global-alert').hidden = true;
+  }
+
+  function showToast(message) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.hidden = false;
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(function () { toast.hidden = true; }, 4200);
+  }
+
+  function unwrapResponse(response) {
+    if (!response || response.ok !== true) {
+      throw new Error(response?.error?.message || 'Server tidak mengembalikan response yang valid.');
+    }
+    return response.data;
+  }
+
+  function normalizeErrorMessage(error) {
+    return error?.message || 'Terjadi gangguan. Silakan coba lagi.';
+  }
+
+  function formatStatus(status) {
+    return ({
+      DRAFT: 'Draft',
+      PENDING_L1: 'Validasi L1',
+      PENDING_L2: 'Validasi L2',
+      FINAL: 'Final ✓'
+    })[status] || status || '—';
+  }
+
+  function formatRole(role) {
+    return ({
+      SUPER_ADMIN: 'Super Admin',
+      ADMIN_DIVISION: 'Admin Divisi',
+      APPROVER_L1: 'Approver L1',
+      APPROVER_L2: 'Approver L2',
+      USER: 'Pengguna'
+    })[role] || role || '—';
+  }
+
+  function formatDate(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(date);
+  }
+
+  function formatDateTime(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? String(value)
+      : new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  }
+</script>

@@ -1,0 +1,11 @@
+node_modules/
+.vercel/
+.env
+.env.*
+!.env.example
+.clasp.json
+.clasprc.json
+service-account*.json
+*.local.json
+dist/
+coverage/

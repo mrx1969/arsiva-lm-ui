@@ -1,0 +1,38 @@
+# Google Apps Script / clasp
+.clasp.json
+.clasprc.json
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Service account / credentials
+*service-account*.json
+service-account*.json
+credentials.json
+credential.json
+secrets.json
+
+# Tokens / temporary secrets
+token.json
+tokens/
+*.token
+
+# Upload temporary files
+tmp/
+temp/
+uploads/
+*.part
+
+# Node
+node_modules/
+
+# Logs
+*.log
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
