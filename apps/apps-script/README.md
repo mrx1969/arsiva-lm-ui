@@ -119,6 +119,8 @@ npm run build
 ```
 
 Pada 30 September 2026, lima tes signature/replay/akses dan build Next.js lulus.
+Source bridge dengan guard API dan health check sudah dipush sebagai versi 10;
+deployment yang sama telah diperbarui ke versi 10 dengan akses domain tetap.
 Setup database telah dilaporkan selesai oleh administrator; Script Properties
 `SPREADSHEET_ID` tersedia. Aktivasi API dan environment Vercel masih harus
 dikonfirmasi dengan tes koneksi setelah konfigurasinya diterapkan.
