@@ -1,0 +1,510 @@
+<script>
+  const ADMIN_COLLECTIONS = {
+    division: 'divisions', unit: 'units', category: 'categories', user: 'users',
+    location: 'locations', box: 'boxes', setting: 'settings'
+  };
+
+  const ADMIN_FORMS = {
+    division: {
+      title: 'divisi', fields: [
+        field('code', 'Kode divisi', 'text', true), field('name', 'Nama divisi', 'text', true),
+        field('drive_group_email', 'Email Google Group', 'email'),
+        field('archive_number_format', 'Format nomor arsip', 'text', false, '{DIVISION}/{YEAR}/{SEQUENCE:5}'),
+        field('active_folder_id', 'ID folder aktif Drive', 'text'), activeField()
+      ]
+    },
+    unit: {
+      title: 'unit', fields: [
+        field('code', 'Kode unit', 'text', true), field('name', 'Nama unit', 'text', true), activeField()
+      ]
+    },
+    category: {
+      title: 'kategori', fields: [
+        field('code', 'Kode kategori', 'text', true), field('name', 'Nama kategori', 'text', true),
+        field('description', 'Deskripsi', 'textarea'), activeField()
+      ]
+    },
+    user: {
+      title: 'pengguna', fields: [
+        field('full_name', 'Nama lengkap', 'text', true), field('email', 'Email Google Workspace', 'email', true),
+        selectField('role', 'Role', true, function () { return valueOptions(['SUPER_ADMIN', 'ADMIN_DIVISION', 'VERIFIER', 'USER']); }),
+        selectField('division_id', 'Divisi', false, function () { return optionsFrom('divisions', true); }),
+        selectField('unit_id', 'Unit', false, function () { return optionsFrom('units', true); }), activeField()
+      ]
+    },
+    location: {
+      title: 'lokasi', fields: [
+        field('code', 'Kode lokasi', 'text', true), field('name', 'Nama lokasi', 'text', true),
+        selectField('type', 'Tipe', true, function () { return labelOptions({ ROOM: 'Ruang', RACK: 'Rak', SHELF: 'Tingkat', POSITION: 'Posisi' }); }),
+        selectField('parent_id', 'Induk lokasi', false, locationParentOptions),
+        field('capacity', 'Kapasitas', 'number', false, '0'),
+        selectField('status', 'Status', true, function () { return labelOptions({ ACTIVE: 'Aktif', NEAR_FULL: 'Hampir penuh', FULL: 'Penuh', INACTIVE: 'Nonaktif' }); }),
+        field('notes', 'Catatan', 'textarea')
+      ]
+    },
+    box: {
+      title: 'boks', fields: [
+        field('code', 'Kode boks', 'text', true), field('label', 'Label boks', 'text', true),
+        selectField('location_id', 'Posisi penyimpanan', true, function () {
+          return (uiState.adminData?.locations || []).filter(function (item) { return item.type === 'POSITION'; })
+            .map(function (item) { return { value: item.id, label: locationPath(item.id) }; });
+        }),
+        field('capacity', 'Kapasitas arsip', 'number', true, '1'),
+        selectField('status', 'Status', true, function () { return labelOptions({ ACTIVE: 'Aktif', FULL: 'Penuh', INACTIVE: 'Nonaktif' }); })
+      ]
+    },
+    setting: { title: 'pengaturan', fields: [field('key', 'Kunci', 'text', true, '', true), field('value', 'Nilai', 'text', true)] }
+  };
+
+  function field(name, label, type, required, placeholder, readonly) {
+    return { name: name, label: label, type: type, required: Boolean(required), placeholder: placeholder || '', readonly: Boolean(readonly) };
+  }
+
+  function selectField(name, label, required, options) {
+    return { name: name, label: label, type: 'select', required: Boolean(required), options: options };
+  }
+
+  function activeField() {
+    return { name: 'is_active', label: 'Data aktif', type: 'checkbox', defaultValue: true };
+  }
+
+  async function ensureAdminViewData(view) {
+    if (view === 'audit') {
+      if (uiState.permissions.can_view_audit) loadAuditLogs();
+      return;
+    }
+    if (!uiState.permissions.can_manage_master) return;
+
+    if (!uiState.adminLoaded && !uiState.adminLoading) await loadAdminData();
+    if (uiState.adminLoaded) renderAdminView(view);
+  }
+
+  async function loadAdminData(options) {
+    if (uiState.adminLoading) return;
+    if (uiState.adminLoaded && !options?.force) return;
+    uiState.adminLoading = true;
+    setAdminTablesLoading();
+    try {
+      uiState.adminData = unwrapResponse(await gas('getAdminBootstrap'));
+      uiState.adminLoaded = true;
+      renderAdminView(uiState.currentView);
+    } catch (error) {
+      showToast(normalizeErrorMessage(error));
+      renderAdminLoadError(normalizeErrorMessage(error));
+    } finally {
+      uiState.adminLoading = false;
+    }
+  }
+
+  function renderAdminView(view) {
+    if (!uiState.adminData) return;
+    const renderers = {
+      storage: renderLocations, boxes: renderBoxes, divisions: renderOrganizations,
+      categories: renderCategories, users: renderUsers, settings: renderSettings
+    };
+    if (renderers[view]) renderers[view]();
+  }
+
+  function renderLocations() {
+    const rows = uiState.adminData.locations || [];
+    document.getElementById('location-total').textContent = rows.length;
+    document.getElementById('position-total').textContent = rows.filter(function (item) { return item.type === 'POSITION' && item.status !== 'INACTIVE'; }).length;
+    document.getElementById('position-full').textContent = rows.filter(function (item) { return item.type === 'POSITION' && item.status === 'FULL'; }).length;
+    renderAdminTable('location-table-body', rows, 7, function (item) {
+      return [item.code, item.name, formatLocationType(item.type), adminName('locations', item.parent_id),
+        formatNumber(item.capacity), statusPill(item.status), actionCell('location', item, true)];
+    });
+  }
+
+  function renderBoxes() {
+    renderAdminTable('box-table-body', uiState.adminData.boxes || [], 7, function (item) {
+      return [item.code, item.label, locationPath(item.location_id),
+        formatNumber(item.occupancy) + ' / ' + formatNumber(item.capacity), statusPill(item.status),
+        barcodeCell(item.barcode_value), actionCell('box', item, true)];
+    });
+  }
+
+  function renderOrganizations() {
+    renderAdminTable('division-table-body', uiState.adminData.divisions || [], 5, function (item) {
+      return [item.code, item.name, item.archive_number_format || '—', booleanPill(item.is_active), actionCell('division', item)];
+    });
+    renderAdminTable('unit-table-body', uiState.adminData.units || [], 4, function (item) {
+      return [item.code, item.name, booleanPill(item.is_active), actionCell('unit', item)];
+    });
+  }
+
+  function renderCategories() {
+    renderAdminTable('category-table-body', uiState.adminData.categories || [], 5, function (item) {
+      return [item.code, item.name, item.description || '—', booleanPill(item.is_active), actionCell('category', item)];
+    });
+  }
+
+  function renderUsers() {
+    renderAdminTable('user-table-body', uiState.adminData.users || [], 6, function (item) {
+      const scope = [adminName('divisions', item.division_id), adminName('units', item.unit_id)].filter(function (value) { return value !== '—'; }).join(' · ') || 'Seluruh organisasi';
+      return [item.full_name, item.email, formatRole(item.role), scope, booleanPill(item.is_active), actionCell('user', item)];
+    });
+  }
+
+  function renderSettings() {
+    const container = document.getElementById('settings-list');
+    const fragment = document.createDocumentFragment();
+    (uiState.adminData.settings || []).forEach(function (item) {
+      const row = document.createElement('article');
+      row.className = 'setting-row';
+      const copy = document.createElement('div');
+      const key = document.createElement('strong');
+      key.textContent = settingLabel(item.key);
+      const technical = document.createElement('small');
+      technical.textContent = item.key;
+      copy.append(key, technical);
+      const value = document.createElement('code');
+      value.textContent = item.value;
+      row.append(copy, value, actionButton('setting', item));
+      fragment.appendChild(row);
+    });
+    container.replaceChildren(fragment);
+  }
+
+  function renderAdminTable(bodyId, rows, columnCount, rowBuilder) {
+    const body = document.getElementById(bodyId);
+    const fragment = document.createDocumentFragment();
+    if (!rows.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = columnCount;
+      cell.className = 'admin-empty';
+      cell.textContent = 'Belum ada data. Gunakan tombol tambah untuk membuat data pertama.';
+      row.appendChild(cell);
+      fragment.appendChild(row);
+    } else {
+      rows.forEach(function (item) {
+        const row = document.createElement('tr');
+        rowBuilder(item).forEach(function (value) {
+          const cell = document.createElement('td');
+          if (value instanceof Node) cell.appendChild(value); else cell.textContent = value === undefined || value === null || value === '' ? '—' : String(value);
+          row.appendChild(cell);
+        });
+        fragment.appendChild(row);
+      });
+    }
+    body.replaceChildren(fragment);
+  }
+
+  function actionCell(entity, item, printable) {
+    const wrap = document.createElement('div');
+    wrap.className = 'table-actions';
+    wrap.appendChild(actionButton(entity, item));
+    if (printable) {
+      const print = document.createElement('button');
+      print.type = 'button';
+      print.className = 'table-action';
+      print.textContent = 'Cetak';
+      print.dataset.barcodePrint = item.barcode_value;
+      print.dataset.barcodeLabel = item.label || item.name || item.code;
+      wrap.appendChild(print);
+    }
+    return wrap;
+  }
+
+  function actionButton(entity, item) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'table-action';
+    button.textContent = 'Edit';
+    button.dataset.adminEdit = entity;
+    button.dataset.recordId = item.id || item.key;
+    return button;
+  }
+
+  function statusPill(status) {
+    const pill = document.createElement('span');
+    pill.className = 'admin-status admin-status--' + String(status || '').toLowerCase().replace('_', '-');
+    pill.textContent = ({ ACTIVE: 'Aktif', NEAR_FULL: 'Hampir penuh', FULL: 'Penuh', INACTIVE: 'Nonaktif' })[status] || status || '—';
+    return pill;
+  }
+
+  function booleanPill(value) { return statusPill(value === true || String(value).toLowerCase() === 'true' ? 'ACTIVE' : 'INACTIVE'); }
+
+  function barcodeCell(value) {
+    const code = document.createElement('code');
+    code.className = 'barcode-code';
+    code.textContent = value || '—';
+    return code;
+  }
+
+  function bindAdminEvents() {
+    document.querySelectorAll('[data-admin-add]').forEach(function (button) {
+      button.addEventListener('click', function () { openAdminForm(button.dataset.adminAdd); });
+    });
+    document.getElementById('admin-form').addEventListener('submit', saveAdminForm);
+    document.getElementById('barcode-scan-form').addEventListener('submit', handleBarcodeScan);
+    document.querySelectorAll('[data-open-barcode-scan]').forEach(function (button) {
+      button.addEventListener('click', openBarcodeScanner);
+    });
+    document.getElementById('audit-previous').addEventListener('click', function () {
+      if (uiState.auditPage > 1) { uiState.auditPage -= 1; loadAuditLogs(); }
+    });
+    document.getElementById('audit-next').addEventListener('click', function () {
+      if (uiState.auditPage < uiState.auditLastPage) { uiState.auditPage += 1; loadAuditLogs(); }
+    });
+    document.addEventListener('click', function (event) {
+      const edit = event.target.closest('[data-admin-edit]');
+      if (edit) openAdminForm(edit.dataset.adminEdit, findAdminRecord(edit.dataset.adminEdit, edit.dataset.recordId));
+      const print = event.target.closest('[data-barcode-print]');
+      if (print) printCode128(print.dataset.barcodePrint, print.dataset.barcodeLabel);
+    });
+  }
+
+  async function openBarcodeScanner() {
+    if (!uiState.adminLoaded) await loadAdminData();
+    if (!uiState.adminLoaded) return;
+    const input = document.getElementById('barcode-scan-input');
+    input.value = '';
+    document.getElementById('barcode-scan-result').replaceChildren();
+    document.getElementById('barcode-scan-dialog').showModal();
+    setTimeout(function () { input.focus(); }, 50);
+  }
+
+  function handleBarcodeScan(event) {
+    event.preventDefault();
+    const raw = document.getElementById('barcode-scan-input').value.trim().toUpperCase();
+    const location = (uiState.adminData?.locations || []).find(function (item) { return String(item.barcode_value || '').toUpperCase() === raw || String(item.code || '').toUpperCase() === raw; });
+    const box = (uiState.adminData?.boxes || []).find(function (item) { return String(item.barcode_value || '').toUpperCase() === raw || String(item.code || '').toUpperCase() === raw; });
+    const result = document.getElementById('barcode-scan-result');
+    if (!location && !box) {
+      result.className = 'scan-result scan-result--error';
+      result.textContent = 'Identitas tidak ditemukan. Periksa kode atau sinkronkan ulang data.';
+      return;
+    }
+    const card = document.createElement('div');
+    const title = document.createElement('strong');
+    const detail = document.createElement('span');
+    if (location) {
+      title.textContent = location.name + ' · ' + location.barcode_value;
+      detail.textContent = formatLocationType(location.type) + ' — ' + locationPath(location.id);
+    } else {
+      title.textContent = box.label + ' · ' + box.barcode_value;
+      detail.textContent = 'Boks — ' + locationPath(box.location_id) + ' — isi ' + formatNumber(box.occupancy) + '/' + formatNumber(box.capacity);
+    }
+    card.append(title, detail);
+    result.className = 'scan-result scan-result--found';
+    result.replaceChildren(card);
+    setTimeout(function () {
+      document.getElementById('barcode-scan-dialog').close();
+      switchView(location ? 'storage' : 'boxes', { updateHistory: true, loadData: false });
+    }, 900);
+  }
+
+  function openAdminForm(entity, record) {
+    const definition = ADMIN_FORMS[entity];
+    if (!definition) return;
+    uiState.adminEntity = entity;
+    uiState.adminRecordId = record ? (record.id || record.key) : '';
+    const editing = Boolean(record);
+    document.getElementById('admin-dialog-kicker').textContent = entity === 'setting' ? 'Tata kelola' : 'Master data';
+    document.getElementById('admin-dialog-title').textContent = (editing ? 'Edit ' : 'Tambah ') + definition.title;
+    document.getElementById('admin-form-error').hidden = true;
+    const fields = document.createDocumentFragment();
+    definition.fields.forEach(function (definitionField) { fields.appendChild(createAdminField(definitionField, record || {})); });
+    document.getElementById('admin-form-fields').replaceChildren(fields);
+    document.getElementById('admin-dialog').showModal();
+  }
+
+  function createAdminField(definition, record) {
+    const wrapper = document.createElement('label');
+    wrapper.className = definition.type === 'checkbox' ? 'form-field form-field--checkbox' : 'form-field';
+    const label = document.createElement('span');
+    label.textContent = definition.label + (definition.required ? ' *' : '');
+    let control;
+    if (definition.type === 'select') {
+      control = document.createElement('select');
+      const choices = typeof definition.options === 'function' ? definition.options() : definition.options || [];
+      if (!definition.required) control.appendChild(optionNode('', '— Tidak dipilih —'));
+      choices.forEach(function (choice) { control.appendChild(optionNode(choice.value, choice.label)); });
+      let selectedValue = record[definition.name] || '';
+      if (definition.name === 'role' && ['APPROVER_L1', 'APPROVER_L2'].indexOf(selectedValue) >= 0) selectedValue = 'VERIFIER';
+      control.value = selectedValue;
+    } else if (definition.type === 'textarea') {
+      control = document.createElement('textarea');
+      control.rows = 3;
+      control.value = record[definition.name] || '';
+    } else {
+      control = document.createElement('input');
+      control.type = definition.type;
+      if (definition.type === 'checkbox') control.checked = record[definition.name] === undefined ? definition.defaultValue : clientBoolean(record[definition.name]);
+      else control.value = record[definition.name] ?? definition.placeholder ?? '';
+    }
+    control.name = definition.name;
+    control.required = definition.required;
+    control.readOnly = definition.readonly;
+    if (definition.type === 'number') control.min = definition.name === 'capacity' && uiState.adminEntity === 'box' ? '1' : '0';
+    wrapper.append(label, control);
+    return wrapper;
+  }
+
+  function optionNode(value, label) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    return option;
+  }
+
+  async function saveAdminForm(event) {
+    event.preventDefault();
+    if (uiState.adminSaving) return;
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const payload = {};
+    new FormData(form).forEach(function (value, key) { payload[key] = String(value).trim(); });
+    form.querySelectorAll('input[type="checkbox"]').forEach(function (checkbox) { payload[checkbox.name] = checkbox.checked; });
+    const existing = findAdminRecord(uiState.adminEntity, uiState.adminRecordId);
+    if (existing?.id) payload.id = existing.id;
+    if (existing?.row_version) payload.row_version = existing.row_version;
+    uiState.adminSaving = true;
+    setAdminFormSaving(true);
+    try {
+      const result = unwrapResponse(await gas('saveAdminRecord', uiState.adminEntity, payload));
+      reconcileAdminRecord(result.entity, result.record);
+      document.getElementById('admin-dialog').close();
+      renderAdminView(uiState.currentView);
+      showToast('Data berhasil disimpan.');
+    } catch (error) {
+      const errorBox = document.getElementById('admin-form-error');
+      errorBox.textContent = normalizeErrorMessage(error);
+      errorBox.hidden = false;
+    } finally {
+      uiState.adminSaving = false;
+      setAdminFormSaving(false);
+    }
+  }
+
+  function reconcileAdminRecord(entity, record) {
+    const collection = ADMIN_COLLECTIONS[entity];
+    if (!collection || !uiState.adminData) return;
+    const rows = uiState.adminData[collection] || [];
+    const identity = entity === 'setting' ? 'key' : 'id';
+    const index = rows.findIndex(function (item) { return String(item[identity]) === String(record[identity]); });
+    if (index >= 0) rows[index] = record; else rows.push(record);
+    uiState.adminData[collection] = rows;
+  }
+
+  async function loadAuditLogs() {
+    if (uiState.auditLoading || uiState.currentView !== 'audit') return;
+    uiState.auditLoading = true;
+    setTableMessage('audit-table-body', 5, 'Memuat audit…');
+    try {
+      const data = unwrapResponse(await gas('getAuditLogs', { page: uiState.auditPage, page_size: 20 }));
+      uiState.auditLastPage = data.pagination.last_page || 1;
+      renderAdminTable('audit-table-body', data.rows || [], 5, function (item) {
+        return [formatDateTime(item.occurred_at), item.actor_email || 'Sistem', item.action, item.entity_type + ' · ' + String(item.entity_id || '').slice(0, 12), item.request_id || '—'];
+      });
+      document.getElementById('audit-page-label').textContent = 'Halaman ' + uiState.auditPage + ' dari ' + uiState.auditLastPage;
+      document.getElementById('audit-previous').disabled = uiState.auditPage <= 1;
+      document.getElementById('audit-next').disabled = uiState.auditPage >= uiState.auditLastPage;
+    } catch (error) {
+      setTableMessage('audit-table-body', 5, normalizeErrorMessage(error));
+    } finally {
+      uiState.auditLoading = false;
+    }
+  }
+
+  function findAdminRecord(entity, id) {
+    const collection = ADMIN_COLLECTIONS[entity];
+    const identity = entity === 'setting' ? 'key' : 'id';
+    return (uiState.adminData?.[collection] || []).find(function (item) { return String(item[identity]) === String(id); });
+  }
+
+  function optionsFrom(collection, includeBlank) {
+    const options = (uiState.adminData?.[collection] || []).map(function (item) { return { value: item.id, label: (item.code ? item.code + ' — ' : '') + item.name }; });
+    return includeBlank ? options : options;
+  }
+
+  function locationParentOptions() {
+    return (uiState.adminData?.locations || []).map(function (item) { return { value: item.id, label: formatLocationType(item.type) + ' · ' + locationPath(item.id) }; });
+  }
+
+  function valueOptions(values) { return values.map(function (value) { return { value: value, label: formatRole(value) }; }); }
+  function labelOptions(values) { return Object.keys(values).map(function (key) { return { value: key, label: values[key] }; }); }
+  function adminName(collection, id) { const row = (uiState.adminData?.[collection] || []).find(function (item) { return String(item.id) === String(id); }); return row ? row.name : '—'; }
+  function formatLocationType(type) { return ({ ROOM: 'Ruang', RACK: 'Rak', SHELF: 'Tingkat', POSITION: 'Posisi' })[type] || type || '—'; }
+  function formatNumber(value) { return new Intl.NumberFormat('id-ID').format(Number(value) || 0); }
+  function clientBoolean(value) { return value === true || String(value).toLowerCase() === 'true' || String(value) === '1'; }
+
+  function locationPath(id) {
+    const rows = uiState.adminData?.locations || [];
+    const names = [];
+    const visited = {};
+    let current = rows.find(function (item) { return String(item.id) === String(id); });
+    while (current && !visited[current.id]) {
+      visited[current.id] = true;
+      names.unshift(current.name || current.code);
+      current = rows.find(function (item) { return String(item.id) === String(current.parent_id); });
+    }
+    return names.join(' / ') || '—';
+  }
+
+  function settingLabel(key) {
+    return ({ MAX_FILE_SIZE_BYTES: 'Batas ukuran file', SEARCH_CACHE_SECONDS: 'Durasi cache pencarian', REMINDER_HOURS: 'Pengingat verifikasi', ESCALATION_HOURS: 'Eskalasi verifikasi', PHYSICAL_CAPACITY_WARNING_PERCENT: 'Peringatan kapasitas lokasi', PRIMARY_STORAGE_LOCATION_NAME: 'Nama lokasi utama' })[key] || key;
+  }
+
+  function setAdminTablesLoading() {
+    [['location-table-body', 7], ['box-table-body', 7], ['division-table-body', 5], ['unit-table-body', 4], ['category-table-body', 5], ['user-table-body', 6]].forEach(function (item) { setTableMessage(item[0], item[1], 'Memuat data…'); });
+  }
+
+  function renderAdminLoadError(message) {
+    [['location-table-body', 7], ['box-table-body', 7], ['division-table-body', 5], ['unit-table-body', 4], ['category-table-body', 5], ['user-table-body', 6]].forEach(function (item) { setTableMessage(item[0], item[1], message); });
+  }
+
+  function setTableMessage(bodyId, columns, message) {
+    const body = document.getElementById(bodyId);
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = columns;
+    cell.className = 'admin-empty';
+    cell.textContent = message;
+    row.appendChild(cell);
+    body.replaceChildren(row);
+  }
+
+  function setAdminFormSaving(saving) {
+    const button = document.getElementById('admin-save-button');
+    button.disabled = saving;
+    button.textContent = saving ? 'Menyimpan…' : 'Simpan';
+  }
+
+  function code128Svg(value) {
+    const patterns = ['212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112'];
+    const text = String(value || '').toUpperCase();
+    if (!text || Array.from(text).some(function (character) { const code = character.charCodeAt(0); return code < 32 || code > 126; })) throw new Error('Barcode hanya mendukung karakter ASCII standar.');
+    const values = [104].concat(Array.from(text).map(function (character) { return character.charCodeAt(0) - 32; }));
+    let checksum = values[0];
+    values.slice(1).forEach(function (number, index) { checksum += number * (index + 1); });
+    values.push(checksum % 103, 106);
+    let x = 10;
+    const bars = [];
+    values.forEach(function (number) {
+      Array.from(patterns[number]).forEach(function (width, index) {
+        const pixels = Number(width) * 2;
+        if (index % 2 === 0) bars.push('<rect x="' + x + '" y="8" width="' + pixels + '" height="72"/>');
+        x += pixels;
+      });
+    });
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + (x + 10) + ' 105" role="img" aria-label="Barcode ' + escapeHtml(text) + '"><rect width="100%" height="100%" fill="#fff"/><g fill="#000">' + bars.join('') + '</g><text x="50%" y="98" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" letter-spacing="2">' + escapeHtml(text) + '</text></svg>';
+  }
+
+  function printCode128(value, label) {
+    try {
+      const popup = window.open('', '_blank', 'width=720,height=520');
+      if (!popup) throw new Error('Popup cetak diblokir browser. Izinkan popup lalu coba lagi.');
+      popup.document.write('<!doctype html><html><head><title>Label ' + escapeHtml(value) + '</title><style>@page{size:auto;margin:12mm}body{font-family:Arial,sans-serif;margin:0;color:#111}.label{width:90mm;padding:8mm;border:1px dashed #777;text-align:center}.label h1{margin:0 0 3mm;font-size:16px}.label svg{width:100%;height:auto}.label p{margin:3mm 0 0;font-size:11px}</style></head><body><section class="label"><h1>' + escapeHtml(label || value) + '</h1>' + code128Svg(value) + '<p>Arsiva-LM · Identitas penyimpanan fisik</p></section><script>window.onload=function(){window.print()}<\/script></body></html>');
+      popup.document.close();
+    } catch (error) { showToast(normalizeErrorMessage(error)); }
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>'"]/g, function (character) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]; });
+  }
+
+  document.addEventListener('DOMContentLoaded', bindAdminEvents);
+</script>

@@ -12,7 +12,7 @@ function getDataVersion_(spreadsheet) {
 function getMasterDataCached_(spreadsheet) {
   const version = getDataVersion_(spreadsheet);
   const cache = CacheService.getScriptCache();
-  const cacheKey = 'master-data:v' + version;
+  const cacheKey = 'master-data:app' + APP.VERSION + ':v' + version;
   const cached = cache.get(cacheKey);
 
   if (cached) return JSON.parse(cached);
@@ -43,7 +43,7 @@ function projectDivision_(item) {
 }
 
 function projectUnit_(item) {
-  return { id: item.id, division_id: item.division_id, code: item.code, name: item.name };
+  return { id: item.id, code: item.code, name: item.name };
 }
 
 function projectCategory_(item) {
@@ -53,4 +53,3 @@ function projectCategory_(item) {
 function invalidateDataVersionCache_() {
   CacheService.getScriptCache().remove('settings:data-version');
 }
-

@@ -1,4 +1,10 @@
 function doGet() {
+  if (isApiOnly_()) {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true, service: APP.NAME, mode: 'api', version: APP.VERSION
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+  getCurrentUser_();
   const template = HtmlService.createTemplateFromFile('index');
   template.appName = APP.NAME;
   template.appVersion = APP.VERSION;
@@ -7,6 +13,14 @@ function doGet() {
   return template.evaluate()
     .setTitle(APP.NAME)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+}
+
+function isApiOnly_() {
+  return isTruthyCell_(PropertiesService.getScriptProperties().getProperty(PROPERTY_KEYS.API_ONLY));
+}
+
+function assertGasUiEnabled_() {
+  assert_(!isApiOnly_(), 'GAS_UI_DISABLED', 'Gunakan aplikasi Arsiva-LM di Vercel.');
 }
 
 function doPost(event) {
@@ -59,7 +73,14 @@ function assertInternalSignature_(body) {
   const matchesCurrent = timingSafeEqual_(signature, computeHmacSha256Base64Url_(canonical, currentSecret));
   const matchesPrevious = previousSecret && timingSafeEqual_(signature, computeHmacSha256Base64Url_(canonical, previousSecret));
   assert_(matchesCurrent || matchesPrevious, 'SIGNATURE_INVALID', 'Signature request internal tidak valid.');
-  nonceCache.put(nonceKey, '1', 300);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(APP.LOCK_TIMEOUT_MS);
+  try {
+    assert_(!nonceCache.get(nonceKey), 'SIGNATURE_REPLAY', 'Request internal sudah pernah diproses.');
+    nonceCache.put(nonceKey, '1', 600);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function canonicalInternalRequest_(action, meta, payload) {
@@ -72,6 +93,12 @@ function canonicalInternalRequest_(action, meta, payload) {
 
 function dispatchInternalAction_(action, payload, actor) {
   switch (String(action || '')) {
+    case 'system.health': {
+      assert_(actor.role === ROLES.SUPER_ADMIN, 'FORBIDDEN', 'Hanya Super Admin dapat memeriksa koneksi.');
+      const db = getDatabase_();
+      Object.keys(SHEET_SCHEMAS).forEach(function (name) { getSheet_(name, db); });
+      return { database_ready: true, api_only: isApiOnly_(), version: APP.VERSION, checked_at: nowIso_() };
+    }
     case 'dashboard.bootstrap':
       return buildDashboardBootstrap_(actor);
     case 'archives.list':
@@ -104,18 +131,21 @@ function include_(filename) {
 
 function getDashboardBootstrap() {
   return executeSafely_(function () {
+    assertGasUiEnabled_();
     return buildDashboardBootstrap_();
   });
 }
 
 function getArchivesPage(options) {
   return executeSafely_(function () {
+    assertGasUiEnabled_();
     return listArchivesPage_(options || {});
   });
 }
 
 function searchArchives(options) {
   return executeSafely_(function () {
+    assertGasUiEnabled_();
     const normalized = Object.assign({}, options || {});
     normalized.page = normalized.page || 1;
     return listArchivesPage_(normalized);
@@ -124,42 +154,49 @@ function searchArchives(options) {
 
 function getArchiveDetail(archiveId) {
   return executeSafely_(function () {
+    assertGasUiEnabled_();
     return getArchiveDetail_(archiveId);
   });
 }
 
 function getArchivePreview(archiveId) {
   return executeSafely_(function () {
+    assertGasUiEnabled_();
     return getArchivePreview_(archiveId);
   });
 }
 
 function getNotifications(options) {
   return executeSafely_(function () {
+    assertGasUiEnabled_();
     return listNotifications_(options || {});
   });
 }
 
 function markNotificationRead(notificationId) {
   return executeSafely_(function () {
+    assertGasUiEnabled_();
     return markNotificationRead_(notificationId);
   });
 }
 
 function getAdminBootstrap() {
   return executeSafely_(function () {
+    assertGasUiEnabled_();
     return getAdminBootstrap_();
   });
 }
 
 function saveAdminRecord(entity, payload) {
   return executeSafely_(function () {
+    assertGasUiEnabled_();
     return saveAdminRecord_(entity, payload || {});
   });
 }
 
 function getAuditLogs(options) {
   return executeSafely_(function () {
+    assertGasUiEnabled_();
     return listAuditLogs_(options || {});
   });
 }

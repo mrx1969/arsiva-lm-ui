@@ -1,5 +1,6 @@
 function setupProject() {
   return executeSafely_(function () {
+    assertScriptOwner_();
     const lock = LockService.getScriptLock();
     lock.waitLock(APP.LOCK_TIMEOUT_MS);
 
@@ -21,6 +22,39 @@ function setupProject() {
         sheets_created_or_verified: Object.keys(SHEET_SCHEMAS).length,
         next_step: 'Deploy sebagai Web App dan batasi ke domain Google Workspace.'
       };
+    } finally {
+      lock.releaseLock();
+    }
+  });
+}
+
+function assertScriptOwner_() {
+  const active = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  const effective = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+  assert_(active && effective && active === effective, 'FORBIDDEN', 'Jalankan konfigurasi melalui editor Apps Script sebagai pemilik project.');
+  const configured = String(PropertiesService.getScriptProperties().getProperty(PROPERTY_KEYS.ADMIN_EMAIL) || '').toLowerCase();
+  if (configured && active !== configured) {
+    const project = DriveApp.getFileById(ScriptApp.getScriptId());
+    const owner = project.getOwner();
+    const isOwner = owner && String(owner.getEmail()).toLowerCase() === active;
+    const isEditor = project.getEditors().some(function (editor) { return String(editor.getEmail()).toLowerCase() === active; });
+    assert_(isOwner || isEditor, 'FORBIDDEN', 'Hanya pemilik/editor project dapat menjalankan konfigurasi.');
+  }
+}
+
+function prepareVercelBridge() {
+  return executeSafely_(function () {
+    assertScriptOwner_();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(APP.LOCK_TIMEOUT_MS);
+    try {
+      const props = PropertiesService.getScriptProperties();
+      assert_(props.getProperty(PROPERTY_KEYS.SPREADSHEET_ID), 'CONFIG_MISSING', 'Jalankan setupProject terlebih dahulu.');
+      if (!props.getProperty(PROPERTY_KEYS.APPS_SCRIPT_SHARED_SECRET)) {
+        props.setProperty(PROPERTY_KEYS.APPS_SCRIPT_SHARED_SECRET, Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, ''));
+      }
+      props.setProperty(PROPERTY_KEYS.API_ONLY, 'true');
+      return { configured: true, api_only: true, next_step: 'Salin secret dari Script Properties ke Vercel. Deploy API sebagai pemilik dengan akses Anyone.' };
     } finally {
       lock.releaseLock();
     }
@@ -98,6 +132,17 @@ function ensureDefaultSettings_(spreadsheet) {
     });
 
   appendObjects_(SHEETS.SETTINGS, missing, spreadsheet);
+
+  const schemaRow = findRowNumberByField_(SHEETS.SETTINGS, 'key', 'SCHEMA_VERSION', spreadsheet);
+  if (schemaRow > 0) {
+    const schemaSetting = readObjectAtRow_(SHEETS.SETTINGS, schemaRow, spreadsheet);
+    if ((Number(schemaSetting.value) || 0) < 3) {
+      schemaSetting.value = '3';
+      schemaSetting.updated_at = timestamp;
+      schemaSetting.updated_by_email = actorEmail;
+      writeObjectAtRow_(SHEETS.SETTINGS, schemaRow, schemaSetting, spreadsheet);
+    }
+  }
 }
 
 function ensureInitialAdmin_(spreadsheet, properties) {

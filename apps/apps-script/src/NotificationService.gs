@@ -40,3 +40,29 @@ function markNotificationRead_(notificationId) {
   }
 }
 
+function listNotifications_(input) {
+  const options = input || {};
+  const limit = clampInteger_(options.limit, 10, 1, 50);
+  const db = getDatabase_();
+  const user = getCurrentUser_(db);
+  const rows = readObjects_(SHEETS.NOTIFICATIONS, db)
+    .filter(function (item) { return String(item.user_id) === String(user.id); })
+    .sort(function (left, right) {
+      return String(right.created_at || '').localeCompare(String(left.created_at || ''));
+    });
+
+  return {
+    rows: rows.slice(0, limit).map(function (item) {
+      return {
+        id: item.id,
+        type: item.type || 'INFO',
+        title: item.title || 'Notifikasi',
+        message: item.message || '',
+        data: parseJsonObject_(item.data_json),
+        read_at: item.read_at || '',
+        created_at: item.created_at || ''
+      };
+    }),
+    unread_count: rows.filter(function (item) { return !item.read_at; }).length
+  };
+}

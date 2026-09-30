@@ -3,7 +3,8 @@ function buildDashboardBootstrap_(actorOverride) {
   const user = actorOverride || getCurrentUser_(db);
   const version = getDataVersion_(db);
   const cache = CacheService.getUserCache();
-  const cacheKey = 'dashboard:' + user.id + ':app' + APP.VERSION + ':v' + version;
+  const scopeHash = computeSha256_(JSON.stringify([user.id, user.role, user.division_id || '', user.unit_id || '']));
+  const cacheKey = 'dashboard:' + scopeHash + ':app' + APP.VERSION + ':v' + version;
   const cached = cache.get(cacheKey);
   if (cached) return JSON.parse(cached);
 

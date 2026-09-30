@@ -15,7 +15,13 @@ function listArchivesPage_(input, spreadsheet, currentUser, preload) {
       if (options.division_id && String(archive.division_id) !== options.division_id) return false;
       if (options.unit_id && String(archive.unit_id) !== options.unit_id) return false;
       if (options.category_id && String(archive.category_id) !== options.category_id) return false;
-      if (options.status && String(archive.status) !== options.status) return false;
+      if (options.status) {
+        const archiveStatus = String(archive.status);
+        const verificationStatuses = ['PENDING_VERIFICATION', 'PENDING_L1', 'PENDING_L2'];
+        if (options.status === 'PENDING_VERIFICATION') {
+          if (verificationStatuses.indexOf(archiveStatus) < 0) return false;
+        } else if (archiveStatus !== options.status) return false;
+      }
 
       if (options.query) {
         const haystack = normalizeText_([
@@ -88,6 +94,65 @@ function projectArchiveListItem_(archive, lookups) {
     archive_date: archive.archive_date,
     needs_revision: isTruthyCell_(archive.needs_revision),
     created_at: archive.created_at,
+    updated_at: archive.updated_at,
     row_version: Number(archive.row_version) || 1
+  };
+}
+
+function getArchiveDetail_(archiveId) {
+  const id = validateUuidLike_(archiveId, 'Archive ID');
+  const db = getDatabase_();
+  const user = getCurrentUser_(db);
+  const archives = readObjects_(SHEETS.ARCHIVES, db);
+  const archive = archives.find(function (item) {
+    return String(item.id) === id && !item.deleted_at;
+  });
+
+  const grants = canViewAllArchives_(user) ? new Set() : getActiveGrantArchiveIds_(user, db);
+  assert_(archive && canViewArchive_(user, archive, grants), 'ARCHIVE_NOT_FOUND', 'Arsip tidak ditemukan.');
+
+  const lookups = buildArchiveLookups_(getMasterDataCached_(db));
+  const detail = projectArchiveListItem_(archive, lookups);
+  detail.original_file_name = archive.original_file_name || '';
+  detail.mime_type = archive.mime_type || '';
+  detail.size_bytes = Number(archive.size_bytes) || 0;
+  detail.has_file = Boolean(archive.drive_file_id);
+  detail.updated_at = archive.updated_at || archive.created_at || '';
+  detail.classification_path = archive.classification_path || '';
+  return detail;
+}
+
+function getArchivePreview_(archiveId) {
+  const id = validateUuidLike_(archiveId, 'Archive ID');
+  const db = getDatabase_();
+  const user = getCurrentUser_(db);
+  const archives = readObjects_(SHEETS.ARCHIVES, db);
+  const archive = archives.find(function (item) {
+    return String(item.id) === id && !item.deleted_at;
+  });
+  const grants = canViewAllArchives_(user) ? new Set() : getActiveGrantArchiveIds_(user, db);
+
+  assert_(archive && canViewArchive_(user, archive, grants), 'ARCHIVE_NOT_FOUND', 'Arsip tidak ditemukan.');
+  assert_(archive.drive_file_id, 'FILE_NOT_AVAILABLE', 'Berkas arsip belum tersedia di Google Drive.');
+
+  const auditLock = LockService.getScriptLock();
+  auditLock.waitLock(APP.LOCK_TIMEOUT_MS);
+  try {
+    appendAudit_({
+      actor_user_id: user.id,
+      actor_email_snapshot: user.email,
+      action: 'VIEW',
+      entity_type: 'Archive',
+      entity_id: archive.id,
+      metadata: { source: 'GAS_HTMLSERVICE' }
+    }, db);
+  } finally {
+    auditLock.releaseLock();
+  }
+
+  return {
+    archive_id: archive.id,
+    preview_url: 'https://drive.google.com/file/d/' + encodeURIComponent(String(archive.drive_file_id)) + '/preview',
+    mime_type: archive.mime_type || ''
   };
 }

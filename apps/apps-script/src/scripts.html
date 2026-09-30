@@ -7,11 +7,28 @@
     lastPage: 1,
     searchTimer: null,
     requestSequence: 0,
-    archivesLoading: false
+    archivesLoading: false,
+    canUpload: false,
+    notificationsLoading: false,
+    selectedArchiveId: '',
+    currentView: 'dashboard',
+    bootstrapLoaded: false,
+    archivesLoaded: false,
+    permissions: {},
+    adminLoading: false,
+    adminLoaded: false,
+    adminData: null,
+    adminEntity: '',
+    adminRecordId: '',
+    adminSaving: false,
+    auditPage: 1,
+    auditLastPage: 1,
+    auditLoading: false
   };
 
   document.addEventListener('DOMContentLoaded', function () {
     bindUiEvents();
+    switchView(readViewFromLocation(), { updateHistory: false, loadData: false });
     loadDashboard();
   });
 
@@ -34,23 +51,14 @@
       renderIdentity(data.user);
       renderPermissions(data.permissions);
       renderStats(data.stats);
-      renderArchives(data.latest_archives, {
-        current_page: 1,
-        last_page: 1,
-        total: data.stats.total
-      });
-      renderTasks(data.approval_tasks);
+      renderRecentArchives(data.latest_archives);
+      renderTasks(data.verification_tasks || data.approval_tasks || []);
       renderNotificationCount(data.unread_notifications);
       document.getElementById('generated-at').textContent = 'Diperbarui ' + formatDateTime(data.generated_at);
 
-      const loadFullArchivePage = function () {
-        loadArchives({ force: true });
-      };
-      if ('requestIdleCallback' in window) {
-        window.requestIdleCallback(loadFullArchivePage, { timeout: 700 });
-      } else {
-        window.setTimeout(loadFullArchivePage, 0);
-      }
+      uiState.bootstrapLoaded = true;
+      if (uiState.currentView === 'archives') loadArchives({ force: true });
+      if (isAdminView(uiState.currentView)) ensureAdminViewData(uiState.currentView);
     } catch (error) {
       showGlobalError(normalizeErrorMessage(error));
     } finally {
@@ -77,6 +85,7 @@
 
       const data = unwrapResponse(response);
       uiState.lastPage = data.pagination.last_page;
+      uiState.archivesLoaded = true;
       renderArchives(data.rows, data.pagination);
     } catch (error) {
       if (sequence !== uiState.requestSequence) return;
@@ -128,42 +137,176 @@
     });
 
     document.getElementById('upload-button').addEventListener('click', function () {
-      showToast('Form upload akan tersedia pada fase berikutnya.');
+      document.getElementById('upload-dialog').showModal();
+    });
+    document.getElementById('archive-upload-button').addEventListener('click', function () {
+      document.getElementById('upload-dialog').showModal();
+    });
+
+    document.querySelectorAll('[data-nav-action]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        handleNavigation(button.dataset.navAction, button);
+      });
+    });
+
+    document.getElementById('notification-button').addEventListener('click', toggleNotifications);
+    document.getElementById('notification-close').addEventListener('click', closeNotifications);
+    document.getElementById('archive-preview-button').addEventListener('click', openArchivePreview);
+    document.getElementById('sidebar-toggle').addEventListener('click', openSidebar);
+    document.getElementById('sidebar-close').addEventListener('click', closeSidebar);
+    document.getElementById('sidebar-scrim').addEventListener('click', closeSidebar);
+
+    document.querySelectorAll('[data-dialog-close]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        document.getElementById(button.dataset.dialogClose).close();
+      });
+    });
+
+    document.querySelectorAll('dialog').forEach(function (dialog) {
+      dialog.addEventListener('click', function (event) {
+        if (event.target === dialog) dialog.close();
+      });
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') closeSidebar();
+    });
+    window.addEventListener('popstate', function () {
+      switchView(readViewFromLocation(), { updateHistory: false, loadData: true });
     });
   }
 
+  function handleNavigation(action, button) {
+    switchView(action, { updateHistory: true, loadData: true });
+  }
+
+  function switchView(requestedView, options) {
+    const settings = options || {};
+    const allowedViews = ['dashboard', 'archives', 'verification', 'storage', 'boxes', 'divisions', 'categories', 'users', 'audit', 'settings'];
+    const view = allowedViews.indexOf(requestedView) >= 0 ? requestedView : 'dashboard';
+    uiState.currentView = view;
+
+    document.querySelectorAll('[data-app-view]').forEach(function (section) {
+      section.hidden = section.dataset.appView !== view;
+    });
+    document.querySelectorAll('.side-nav-item[data-nav-action]').forEach(function (item) {
+      const active = item.dataset.navAction === view;
+      item.classList.toggle('is-active', active);
+      if (active) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    });
+    const viewLabels = {
+      dashboard: ['Ruang kerja', 'Dashboard'],
+      archives: ['Koleksi', 'Arsip'],
+      verification: ['Antrean', 'Verifikasi arsip'],
+      storage: ['Arsip fisik', 'Lokasi penyimpanan'],
+      boxes: ['Arsip fisik', 'Boks & barcode'],
+      divisions: ['Master data', 'Divisi dan unit'],
+      categories: ['Master data', 'Kategori arsip'],
+      users: ['Master data', 'Pengguna'],
+      audit: ['Tata kelola', 'Audit log'],
+      settings: ['Tata kelola', 'Pengaturan']
+    };
+    document.getElementById('view-kicker').textContent = viewLabels[view][0];
+    document.getElementById('view-title').textContent = viewLabels[view][1];
+    document.title = viewLabels[view][1] + ' — Arsiva-LM';
+    window.scrollTo({ top: 0, behavior: 'auto' });
+
+    if (settings.updateHistory && readViewFromLocation() !== view) {
+      history.pushState({ view: view }, '', '#/' + view);
+    }
+    if (settings.loadData !== false && view === 'archives' && uiState.bootstrapLoaded && !uiState.archivesLoaded) {
+      loadArchives({ force: true });
+    }
+    if (settings.loadData !== false && isAdminView(view) && uiState.bootstrapLoaded) {
+      ensureAdminViewData(view);
+    }
+    closeSidebar();
+  }
+
+  function isAdminView(view) {
+    return ['storage', 'boxes', 'divisions', 'categories', 'users', 'audit', 'settings'].indexOf(view) >= 0;
+  }
+
+  function readViewFromLocation() {
+    const view = String(window.location.hash || '').replace(/^#\/?/, '') || 'dashboard';
+    return view === 'approval' ? 'verification' : view;
+  }
+
+  function openSidebar() {
+    document.getElementById('app-sidebar').classList.add('is-open');
+    document.getElementById('sidebar-scrim').hidden = false;
+    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', 'true');
+  }
+
+  function closeSidebar() {
+    document.getElementById('app-sidebar').classList.remove('is-open');
+    document.getElementById('sidebar-scrim').hidden = true;
+    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', 'false');
+  }
+
   function renderIdentity(user) {
-    document.getElementById('user-name').textContent = user.full_name || user.email;
+    const displayName = user.full_name || user.email;
+    document.getElementById('user-name').textContent = displayName;
     document.getElementById('user-role').textContent = formatRole(user.role);
+    document.getElementById('user-avatar').textContent = getInitials(displayName);
   }
 
   function renderPermissions(permissions) {
-    document.getElementById('upload-button').disabled = !permissions.can_upload;
+    uiState.permissions = permissions || {};
+    uiState.canUpload = Boolean(permissions.can_upload);
+    document.getElementById('upload-button').disabled = !uiState.canUpload;
+    document.getElementById('archive-upload-button').disabled = !uiState.canUpload;
+    document.querySelectorAll('[data-permission="manage-master"]').forEach(function (item) {
+      item.hidden = !permissions.can_manage_master;
+    });
+    document.querySelectorAll('[data-permission="view-audit"]').forEach(function (item) {
+      item.hidden = !permissions.can_view_audit;
+    });
+    document.querySelectorAll('[data-permission="verify"]').forEach(function (item) {
+      item.hidden = !permissions.can_verify;
+    });
+    document.getElementById('master-nav-group').hidden = !permissions.can_manage_master;
+    document.getElementById('storage-nav-group').hidden = !permissions.can_manage_master;
+    document.getElementById('governance-nav-group').hidden =
+      !permissions.can_manage_master && !permissions.can_view_audit;
+
+    const masterViews = ['storage', 'boxes', 'divisions', 'categories', 'users', 'settings'];
+    const forbiddenMasterView = masterViews.indexOf(uiState.currentView) >= 0 && !permissions.can_manage_master;
+    const forbiddenAuditView = uiState.currentView === 'audit' && !permissions.can_view_audit;
+    const forbiddenVerificationView = uiState.currentView === 'verification' && !permissions.can_verify;
+    if (forbiddenMasterView || forbiddenAuditView || forbiddenVerificationView) {
+      switchView('dashboard', { updateHistory: true, loadData: false });
+      showToast('Akun Anda tidak memiliki akses ke halaman tersebut.');
+    }
   }
 
   function renderStats(stats) {
     const definitions = [
       ['Total terlihat', stats.total],
       ['Draft', stats.draft],
-      ['Validasi L1', stats.pending_l1],
-      ['Validasi L2', stats.pending_l2],
-      ['Final', stats.final]
+      ['Menunggu verifikasi', stats.pending_verification],
+      ['Tersimpan', stats.final]
     ];
     const fragment = document.createDocumentFragment();
 
-    definitions.forEach(function (item) {
+    const tones = ['total', 'draft', 'verification', 'final'];
+    definitions.forEach(function (item, index) {
       const article = document.createElement('article');
-      article.className = 'stat-card';
+      article.className = 'metric-cell';
+      article.dataset.tone = tones[index];
       const label = document.createElement('span');
-      label.className = 'caption';
+      label.className = 'metric-label';
       label.textContent = item[0];
       const value = document.createElement('strong');
+      value.className = 'metric-value';
       value.textContent = new Intl.NumberFormat('id-ID').format(item[1] || 0);
       article.append(label, value);
       fragment.appendChild(article);
     });
 
     document.getElementById('stats-grid').replaceChildren(fragment);
+    document.getElementById('sidebar-archive-count').textContent = compactCount(stats.total);
   }
 
   function renderArchives(rows, pagination) {
@@ -173,9 +316,15 @@
     if (!rows || rows.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
-      empty.textContent = uiState.query
-        ? 'Tidak ada arsip yang cocok. Coba kata kunci atau filter lain.'
-        : 'Belum ada arsip pada cakupan akses Anda.';
+      const title = document.createElement('strong');
+      const message = document.createElement('span');
+      title.textContent = uiState.query || uiState.status ? 'Tidak ada hasil' : 'Koleksi masih kosong';
+      message.textContent = uiState.query || uiState.status
+        ? 'Coba kata kunci atau kombinasi filter yang berbeda.'
+        : uiState.canUpload
+          ? 'Unggah arsip pertama untuk mulai membangun koleksi unit Anda.'
+          : 'Belum ada arsip pada cakupan akses akun Anda.';
+      empty.append(title, message);
       fragment.appendChild(empty);
     } else {
       rows.forEach(function (archive) {
@@ -198,6 +347,16 @@
   function createArchiveItem(archive) {
     const article = document.createElement('article');
     article.className = 'archive-item';
+    article.tabIndex = 0;
+    article.setAttribute('role', 'button');
+    article.setAttribute('aria-label', 'Buka detail ' + (archive.title || 'arsip'));
+    article.addEventListener('click', function () { openArchiveDetail(archive.id); });
+    article.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openArchiveDetail(archive.id);
+      }
+    });
 
     const content = document.createElement('div');
     const number = document.createElement('div');
@@ -231,33 +390,107 @@
     return article;
   }
 
-  function renderTasks(tasks) {
-    const container = document.getElementById('task-list');
+  function renderRecentArchives(rows) {
+    const container = document.getElementById('recent-archive-list');
     const fragment = document.createDocumentFragment();
-    const safeTasks = tasks || [];
+    const safeRows = rows || [];
 
-    if (safeTasks.length === 0) {
+    if (safeRows.length === 0) {
       const empty = document.createElement('div');
-      empty.className = 'empty-state';
-      empty.textContent = 'Tidak ada tugas approval yang menunggu.';
+      empty.className = 'compact-empty';
+      empty.textContent = 'Belum ada arsip pada cakupan akses Anda.';
       fragment.appendChild(empty);
     } else {
-      safeTasks.forEach(function (task) {
-        const item = document.createElement('div');
-        item.className = 'task-item';
-        const label = document.createElement('strong');
-        label.textContent = 'Approval Level ' + task.level;
-        const due = document.createElement('span');
-        due.className = 'caption';
-        due.textContent = 'Batas ' + formatDateTime(task.due_at);
-        item.append(label, due);
-        fragment.appendChild(item);
+      safeRows.slice(0, 5).forEach(function (archive) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'compact-row';
+        const content = document.createElement('span');
+        const title = document.createElement('strong');
+        title.textContent = archive.title || 'Tanpa judul';
+        const number = document.createElement('small');
+        number.textContent = archive.archive_number || 'Nomor belum tersedia';
+        content.append(title, number);
+        const status = document.createElement('span');
+        status.className = 'status-badge status-' + archive.status;
+        status.textContent = archive.needs_revision ? 'Perlu revisi' : formatStatus(archive.status);
+        button.append(content, status);
+        button.addEventListener('click', function () { openArchiveDetail(archive.id); });
+        fragment.appendChild(button);
       });
     }
+    container.replaceChildren(fragment);
+  }
 
+  function renderTasks(tasks) {
+    const safeTasks = tasks || [];
+    renderTaskCollection('task-list', safeTasks, false);
+    renderTaskCollection('dashboard-task-list', safeTasks.slice(0, 5), true);
+    document.getElementById('task-count').textContent = safeTasks.length + ' tugas';
+    document.getElementById('sidebar-task-count').textContent = compactCount(safeTasks.length);
+  }
+
+  function renderTaskCollection(containerId, tasks, compact) {
+    const container = document.getElementById(containerId);
+    const fragment = document.createDocumentFragment();
+    if (tasks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = compact ? 'compact-empty' : 'empty-state';
+      if (compact) {
+        empty.textContent = 'Tidak ada arsip yang menunggu verifikasi.';
+      } else {
+        const title = document.createElement('strong');
+        title.textContent = 'Antrean terkendali';
+        const message = document.createElement('span');
+        message.textContent = 'Tidak ada arsip yang menunggu verifikasi.';
+        empty.append(title, message);
+      }
+      fragment.appendChild(empty);
+    } else {
+      tasks.forEach(function (task) {
+        fragment.appendChild(createTaskItem(task, compact));
+      });
+    }
     container.replaceChildren(fragment);
     container.setAttribute('aria-busy', 'false');
-    document.getElementById('task-count').textContent = safeTasks.length + ' tugas';
+  }
+
+  function createTaskItem(task, compact) {
+    const item = document.createElement(compact ? 'button' : 'div');
+    item.className = compact ? 'compact-row' : 'task-item task-item--table';
+    if (compact) item.type = 'button';
+    else {
+      item.tabIndex = 0;
+      item.setAttribute('role', 'button');
+    }
+    const documentName = document.createElement('span');
+    const title = document.createElement('strong');
+    title.textContent = task.archive_title || 'Arsip ' + String(task.archive_id || '').slice(0, 8);
+    const number = document.createElement('small');
+    number.textContent = task.archive_number || 'Nomor belum tersedia';
+    documentName.append(title, number);
+
+    if (compact) {
+      const status = document.createElement('span');
+      status.className = 'status-badge status-PENDING_VERIFICATION';
+      status.textContent = 'Perlu diperiksa';
+      item.append(documentName, status);
+    } else {
+      const due = document.createElement('span');
+      due.textContent = formatDateTime(task.due_at);
+      const status = document.createElement('span');
+      status.className = 'status-badge status-PENDING_VERIFICATION';
+      status.textContent = 'Menunggu';
+      item.append(documentName, due, status);
+    }
+    item.addEventListener('click', function () { openArchiveDetail(task.archive_id); });
+    item.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openArchiveDetail(task.archive_id);
+      }
+    });
+    return item;
   }
 
   function renderNotificationCount(count) {
@@ -266,6 +499,178 @@
     document.getElementById('notification-button').setAttribute(
       'aria-label', safeCount + ' notifikasi belum dibaca'
     );
+  }
+
+  async function openArchiveDetail(archiveId) {
+    if (!archiveId) return;
+    const dialog = document.getElementById('archive-dialog');
+    const body = document.getElementById('archive-dialog-body');
+    uiState.selectedArchiveId = archiveId;
+    document.getElementById('archive-dialog-number').textContent = 'Detail arsip';
+    document.getElementById('archive-dialog-title').textContent = 'Memuat arsip';
+    document.getElementById('archive-preview-button').disabled = true;
+    body.replaceChildren(createLoadingLine('Mengambil metadata arsip…'));
+    if (!dialog.open) dialog.showModal();
+
+    try {
+      const detail = unwrapResponse(await gas('getArchiveDetail', archiveId));
+      if (uiState.selectedArchiveId !== archiveId) return;
+      renderArchiveDetail(detail);
+    } catch (error) {
+      body.replaceChildren(createInlineError(normalizeErrorMessage(error)));
+    }
+  }
+
+  function renderArchiveDetail(detail) {
+    document.getElementById('archive-dialog-number').textContent = detail.archive_number || 'Nomor belum tersedia';
+    document.getElementById('archive-dialog-title').textContent = detail.title || 'Tanpa judul';
+    const body = document.getElementById('archive-dialog-body');
+    const grid = document.createElement('dl');
+    grid.className = 'detail-grid';
+    [
+      ['Status', detail.needs_revision ? 'Draft — Perlu Revisi' : formatStatus(detail.status)],
+      ['Divisi', detail.division?.name || '—'],
+      ['Unit', detail.unit?.name || '—'],
+      ['Kategori', detail.category?.name || '—'],
+      ['Tanggal arsip', formatDate(detail.archive_date) || '—'],
+      ['Berkas', detail.original_file_name || 'Belum tersedia'],
+      ['Ukuran', detail.size_bytes ? formatBytes(detail.size_bytes) : '—'],
+      ['Diperbarui', formatDateTime(detail.updated_at)]
+    ].forEach(function (entry) {
+      const wrapper = document.createElement('div');
+      const term = document.createElement('dt');
+      const description = document.createElement('dd');
+      term.textContent = entry[0];
+      description.textContent = entry[1];
+      wrapper.append(term, description);
+      grid.appendChild(wrapper);
+    });
+
+    const tags = document.createElement('div');
+    tags.className = 'detail-tags';
+    (detail.tags || []).forEach(function (tag) {
+      const item = document.createElement('span');
+      item.textContent = tag;
+      tags.appendChild(item);
+    });
+    body.replaceChildren(grid, tags);
+    document.getElementById('archive-preview-button').disabled = !detail.has_file;
+  }
+
+  async function openArchivePreview() {
+    if (!uiState.selectedArchiveId) return;
+    const button = document.getElementById('archive-preview-button');
+    const previewWindow = window.open('about:blank', '_blank');
+    button.disabled = true;
+    button.textContent = 'Menyiapkan…';
+
+    try {
+      const data = unwrapResponse(await gas('getArchivePreview', uiState.selectedArchiveId));
+      if (previewWindow) previewWindow.location.replace(data.preview_url);
+      else showToast('Izinkan pop-up browser untuk membuka Google Drive.');
+    } catch (error) {
+      if (previewWindow) previewWindow.close();
+      showToast(normalizeErrorMessage(error));
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Buka di Google Drive';
+    }
+  }
+
+  async function toggleNotifications() {
+    const panel = document.getElementById('notification-panel');
+    if (!panel.hidden) {
+      closeNotifications();
+      return;
+    }
+    panel.hidden = false;
+    document.getElementById('notification-button').setAttribute('aria-expanded', 'true');
+    await loadNotifications();
+  }
+
+  function closeNotifications() {
+    document.getElementById('notification-panel').hidden = true;
+    document.getElementById('notification-button').setAttribute('aria-expanded', 'false');
+  }
+
+  async function loadNotifications() {
+    if (uiState.notificationsLoading) return;
+    const container = document.getElementById('notification-list');
+    uiState.notificationsLoading = true;
+    container.replaceChildren(createLoadingLine('Memuat notifikasi…'));
+
+    try {
+      const data = unwrapResponse(await gas('getNotifications', { limit: 10 }));
+      renderNotifications(data.rows);
+      renderNotificationCount(data.unread_count);
+    } catch (error) {
+      container.replaceChildren(createInlineError(normalizeErrorMessage(error)));
+    } finally {
+      uiState.notificationsLoading = false;
+    }
+  }
+
+  function renderNotifications(rows) {
+    const container = document.getElementById('notification-list');
+    const fragment = document.createDocumentFragment();
+    if (!rows || rows.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'panel-empty';
+      empty.textContent = 'Belum ada notifikasi.';
+      fragment.appendChild(empty);
+    } else {
+      rows.forEach(function (notification) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'notification-item' + (notification.read_at ? ' is-read' : '');
+        const title = document.createElement('strong');
+        title.textContent = notification.title;
+        const message = document.createElement('span');
+        message.textContent = notification.message;
+        const date = document.createElement('small');
+        date.textContent = formatDateTime(notification.created_at);
+        button.append(title, message, date);
+        button.addEventListener('click', function () {
+          handleNotificationClick(notification, button);
+        });
+        fragment.appendChild(button);
+      });
+    }
+    container.replaceChildren(fragment);
+  }
+
+  async function handleNotificationClick(notification, element) {
+    if (!notification.read_at) {
+      element.classList.add('is-read');
+      const current = Number(document.getElementById('notification-count').textContent) || 0;
+      renderNotificationCount(Math.max(current - 1, 0));
+      try {
+        await gas('markNotificationRead', notification.id);
+      } catch (error) {
+        element.classList.remove('is-read');
+        renderNotificationCount(current);
+        showToast(normalizeErrorMessage(error));
+      }
+    }
+    const archiveId = notification.data?.archive_id;
+    if (archiveId) {
+      closeNotifications();
+      openArchiveDetail(archiveId);
+    }
+  }
+
+  function createLoadingLine(message) {
+    const line = document.createElement('div');
+    line.className = 'loading-line';
+    line.textContent = message;
+    return line;
+  }
+
+  function createInlineError(message) {
+    const line = document.createElement('div');
+    line.className = 'inline-error';
+    line.textContent = message;
+    return line;
   }
 
   function setDashboardBusy(isBusy) {
@@ -309,9 +714,10 @@
   function formatStatus(status) {
     return ({
       DRAFT: 'Draft',
-      PENDING_L1: 'Validasi L1',
-      PENDING_L2: 'Validasi L2',
-      FINAL: 'Final ✓'
+      PENDING_VERIFICATION: 'Menunggu verifikasi',
+      PENDING_L1: 'Menunggu verifikasi',
+      PENDING_L2: 'Menunggu verifikasi',
+      FINAL: 'Tersimpan ✓'
     })[status] || status || '—';
   }
 
@@ -319,10 +725,16 @@
     return ({
       SUPER_ADMIN: 'Super Admin',
       ADMIN_DIVISION: 'Admin Divisi',
-      APPROVER_L1: 'Approver L1',
-      APPROVER_L2: 'Approver L2',
+      VERIFIER: 'Petugas Verifikasi',
+      APPROVER_L1: 'Petugas Verifikasi (lama)',
+      APPROVER_L2: 'Petugas Verifikasi (lama)',
       USER: 'Pengguna'
     })[role] || role || '—';
+  }
+
+  function getInitials(value) {
+    const words = String(value || 'A').trim().split(/\s+/).filter(Boolean);
+    return words.slice(0, 2).map(function (word) { return word.charAt(0); }).join('').toUpperCase() || 'A';
   }
 
   function formatDate(value) {
@@ -337,5 +749,17 @@
     return Number.isNaN(date.getTime())
       ? String(value)
       : new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  }
+
+  function formatBytes(value) {
+    const bytes = Number(value) || 0;
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function compactCount(value) {
+    const number = Number(value) || 0;
+    return number > 999 ? '999+' : String(number);
   }
 </script>

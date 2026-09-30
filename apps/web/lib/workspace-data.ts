@@ -26,6 +26,10 @@ type GasArchive = {
   status?: string;
   location_label?: string;
   updated_at?: string;
+  created_at?: string;
+  division?: { name?: string } | null;
+  unit?: { name?: string } | null;
+  category?: { name?: string } | null;
 };
 type GasTask = { archive_title?: string; archive_number?: string; due_at?: string; status?: string };
 type GasLocation = { code?: string; name?: string; type?: string; status?: string; notes?: string; capacity?: number; barcode_value?: string };
@@ -124,11 +128,11 @@ function mapArchive(item: GasArchive): ArchiveRow {
   return {
     number: item.archive_number || "-",
     title: item.title || "Tanpa judul",
-    owner: item.unit_name || item.division_name || "-",
-    category: item.category_name || "-",
+    owner: item.unit?.name || item.division?.name || item.unit_name || item.division_name || "-",
+    category: item.category?.name || item.category_name || "-",
     status: humanizeStatus(item.status),
     location: item.location_label || "Belum ditempatkan",
-    updatedAt: formatDate(item.updated_at)
+    updatedAt: formatDate(item.updated_at || item.created_at)
   };
 }
 
@@ -181,5 +185,5 @@ function formatDate(value?: string): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(date);
+  return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(date);
 }

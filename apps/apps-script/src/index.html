@@ -1,141 +1,266 @@
 <!doctype html>
 <html lang="id">
-  <head>
-    <base target="_top">
-    <meta charset="utf-8">
-    <meta name="color-scheme" content="light">
-    <title><?= appName ?></title>
-    <?!= include_('styles'); ?>
-  </head>
-  <body>
-    <a class="skip-link" href="#main-content">Lewati ke konten utama</a>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1f3a5f">
+  <meta name="description" content="Ruang kerja kearsipan internal <?= appName ?>">
+  <link rel="icon" type="image/png" href="<?!= brandMarkDataUri ?>">
+  <link rel="apple-touch-icon" href="<?!= brandMarkDataUri ?>">
+  <title><?= appName ?> — Kearsipan Internal</title>
+  <?!= include_('styles'); ?>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Lewati ke konten utama</a>
 
-    <header class="topbar">
-      <div class="brand" aria-label="Arsiva-LM">
-        <span class="brand-mark" aria-hidden="true">A</span>
-        <div>
-          <strong><?= appName ?></strong>
-          <span class="brand-caption">Kearsipan Internal</span>
-        </div>
+  <div class="app-shell">
+    <aside id="app-sidebar" class="app-sidebar" aria-label="Navigasi aplikasi">
+      <div class="sidebar-brand">
+        <span class="brand__mark"><img src="<?!= brandMarkDataUri ?>" alt="Logo LM"></span>
+        <span class="brand__copy"><strong><?= appName ?></strong><small>Kearsipan internal</small></span>
+        <button id="sidebar-close" class="sidebar-close" type="button" aria-label="Tutup menu">×</button>
       </div>
 
-      <div class="topbar-actions">
-        <button id="notification-button" class="icon-button" type="button" aria-label="Notifikasi belum dibaca">
-          <span aria-hidden="true">●</span>
-          <span id="notification-count" class="notification-count">0</span>
-        </button>
-        <div class="identity" aria-live="polite">
-          <strong id="user-name">Memuat pengguna…</strong>
-          <span id="user-role">—</span>
-        </div>
-      </div>
-    </header>
-
-    <main id="main-content" class="page-shell">
-      <section class="page-heading" aria-labelledby="dashboard-title">
-        <div>
-          <p class="eyebrow">Ruang kerja arsip</p>
-          <h1 id="dashboard-title">Dashboard</h1>
-          <p id="dashboard-subtitle" class="muted">Ringkasan arsip sesuai hak akses Anda.</p>
-        </div>
-        <button id="upload-button" class="primary-button" type="button" disabled>
-          Upload Arsip
-        </button>
-      </section>
-
-      <div id="global-alert" class="alert" role="alert" hidden>
-        <div>
-          <strong id="alert-title">Data belum dapat dimuat</strong>
-          <p id="alert-message"></p>
-        </div>
-        <button id="retry-button" class="secondary-button" type="button">Coba lagi</button>
-      </div>
-
-      <section aria-labelledby="summary-title">
-        <div class="section-heading">
-          <h2 id="summary-title">Ringkasan</h2>
-          <span id="generated-at" class="caption">Memuat…</span>
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <p class="nav-group__label">Ruang kerja</p>
+          <button class="side-nav-item is-active" type="button" data-nav-action="dashboard" aria-current="page">
+            <span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></span>
+            <span>Dashboard</span>
+          </button>
+          <button class="side-nav-item" type="button" data-nav-action="archives">
+            <span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM7 4h10l2 3H5zM9 11h6"/></svg></span>
+            <span>Arsip</span><span id="sidebar-archive-count" class="nav-count">—</span>
+          </button>
+          <button class="side-nav-item" type="button" data-nav-action="verification" data-permission="verify">
+            <span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 4h10v3h3v13H4V7h3zM8 13l3 3 5-6"/></svg></span>
+            <span>Verifikasi arsip</span><span id="sidebar-task-count" class="nav-count">—</span>
+          </button>
         </div>
 
-        <div id="stats-grid" class="stats-grid" aria-live="polite">
-          <article class="stat-card skeleton-card" aria-label="Memuat statistik"></article>
-          <article class="stat-card skeleton-card" aria-label="Memuat statistik"></article>
-          <article class="stat-card skeleton-card" aria-label="Memuat statistik"></article>
-          <article class="stat-card skeleton-card" aria-label="Memuat statistik"></article>
-          <article class="stat-card skeleton-card" aria-label="Memuat statistik"></article>
+        <div id="storage-nav-group" class="nav-group" hidden>
+          <p class="nav-group__label">Arsip fisik</p>
+          <button class="side-nav-item" type="button" data-nav-action="storage" data-permission="manage-master">
+            <span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v15H4zM8 5V3h8v2M8 10h8M8 15h8"/></svg></span>
+            <span>Lokasi penyimpanan</span>
+          </button>
+          <button class="side-nav-item" type="button" data-nav-action="boxes" data-permission="manage-master">
+            <span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8l8-4 8 4v10l-8 3-8-3zM4 8l8 4 8-4M12 12v9"/></svg></span>
+            <span>Boks & barcode</span>
+          </button>
         </div>
-      </section>
 
-      <div class="content-grid">
-        <section class="archive-section" aria-labelledby="archive-title">
-          <div class="section-heading archive-heading">
-            <div>
-              <h2 id="archive-title">Arsip</h2>
-              <p id="archive-result-summary" class="caption">Memuat arsip terbaru…</p>
-            </div>
+        <div id="master-nav-group" class="nav-group" hidden>
+          <p class="nav-group__label">Master data</p>
+          <button class="side-nav-item" type="button" data-nav-action="divisions" data-permission="manage-master">
+            <span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V9l8-5 8 5v11M8 20v-6h8v6M9 10h.01M15 10h.01"/></svg></span>
+            <span>Divisi dan unit</span>
+          </button>
+          <button class="side-nav-item" type="button" data-nav-action="categories" data-permission="manage-master">
+            <span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h7l2 3h7v10H4z"/></svg></span>
+            <span>Kategori arsip</span>
+          </button>
+          <button class="side-nav-item" type="button" data-nav-action="users" data-permission="manage-master">
+            <span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20c0-4 3-6 7-6s7 2 7 6"/></svg></span>
+            <span>Pengguna</span>
+          </button>
+        </div>
+
+        <div id="governance-nav-group" class="nav-group" hidden>
+          <p class="nav-group__label">Tata kelola</p>
+          <button class="side-nav-item" type="button" data-nav-action="audit" data-permission="view-audit">
+            <span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4h12v16H6zM9 9h6M9 13h6M9 17h4"/></svg></span>
+            <span>Audit log</span>
+          </button>
+          <button class="side-nav-item" type="button" data-nav-action="settings" data-permission="manage-master">
+            <span class="side-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12l2-1-2-4-2 1-2-2V4h-6v2L7 8 5 7l-2 4 2 1v2l-2 1 2 4 2-1 2 2v2h6v-2l2-2 2 1 2-4-2-1z"/></svg></span>
+            <span>Pengaturan</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="sidebar-foot"><span>Google Workspace</span><strong>v<?= appVersion ?></strong></div>
+    </aside>
+
+    <button id="sidebar-scrim" class="sidebar-scrim" type="button" aria-label="Tutup menu" hidden></button>
+
+    <div class="app-frame">
+      <header class="topbar">
+        <div class="topbar__left">
+          <button id="sidebar-toggle" class="menu-button" type="button" aria-label="Buka menu" aria-controls="app-sidebar" aria-expanded="false"><span></span><span></span><span></span></button>
+          <div class="view-context"><small id="view-kicker">Ruang kerja</small><strong id="view-title">Dashboard</strong></div>
+        </div>
+        <div class="account-tools">
+          <button id="notification-button" class="notification-button" type="button" aria-label="0 notifikasi belum dibaca" aria-expanded="false">
+            <span class="notification-button__signal" aria-hidden="true"></span><span id="notification-count">0</span>
+          </button>
+          <div class="account" title="Akun aktif">
+            <span id="user-avatar" class="account__avatar" aria-hidden="true">A</span>
+            <span class="account__copy"><strong id="user-name">Memuat akun</strong><small id="user-role">—</small></span>
           </div>
+        </div>
+      </header>
 
-          <div class="filter-bar" aria-label="Filter arsip">
-            <label class="search-field">
-              <span class="sr-only">Cari arsip</span>
-              <input id="archive-search" type="search" placeholder="Cari judul, nomor, atau tag" autocomplete="off">
-            </label>
-
-            <label>
-              <span class="sr-only">Status arsip</span>
-              <select id="status-filter">
-                <option value="">Semua status</option>
-                <option value="DRAFT">Draft</option>
-                <option value="PENDING_L1">Validasi L1</option>
-                <option value="PENDING_L2">Validasi L2</option>
-                <option value="FINAL">Final</option>
-              </select>
-            </label>
-
-            <label>
-              <span class="sr-only">Jumlah per halaman</span>
-              <select id="page-size">
-                <option value="20">20 per halaman</option>
-                <option value="50">50 per halaman</option>
-                <option value="100">100 per halaman</option>
-              </select>
-            </label>
+      <main id="main-content" class="page-shell" tabindex="-1" aria-busy="true">
+        <section id="global-alert" class="alert" role="alert" hidden>
+          <div><strong id="alert-title">Data belum dapat dimuat</strong><p id="alert-message"></p></div>
+          <button id="retry-button" class="button button--secondary" type="button">Coba lagi</button>
+        </section>
+        <section id="view-dashboard" class="app-view" data-app-view="dashboard">
+        <section class="command-band" aria-labelledby="dashboard-title">
+          <div class="command-band__copy">
+            <p class="eyebrow">Ikhtisar operasional</p>
+            <h1 id="dashboard-title">Dashboard arsip</h1>
+            <p id="dashboard-subtitle" class="lede">Pantau rekod, status verifikasi, dan pekerjaan yang memerlukan pemeriksaan Anda.</p>
+            <p id="generated-at" class="update-note" aria-live="polite">Menyiapkan ringkasan terbaru…</p>
           </div>
-
-          <div id="archive-list" class="archive-list" aria-live="polite" aria-busy="true">
-            <div class="archive-skeleton"></div>
-            <div class="archive-skeleton"></div>
-            <div class="archive-skeleton"></div>
-          </div>
-
-          <nav class="pagination" aria-label="Pagination arsip">
-            <button id="previous-page" class="secondary-button" type="button" disabled>Sebelumnya</button>
-            <span id="page-label" class="caption">Halaman 1 dari 1</span>
-            <button id="next-page" class="secondary-button" type="button" disabled>Berikutnya</button>
-          </nav>
+          <div class="command-band__action"><span class="command-hint">Buat rekod baru</span><button id="upload-button" class="button button--primary" type="button">Unggah arsip</button></div>
         </section>
 
-        <aside class="task-panel" aria-labelledby="task-title">
-          <div class="section-heading">
-            <h2 id="task-title">Perlu Tindakan</h2>
-            <span id="task-count" class="caption">—</span>
+        <section id="summary-section" class="summary-section" aria-labelledby="summary-title">
+          <div class="section-heading"><div><p class="section-index">Ringkasan</p><h2 id="summary-title">Ikhtisar arsip</h2></div><p class="section-note">Sesuai cakupan akses akun aktif</p></div>
+          <div id="stats-grid" class="metric-ledger" aria-live="polite">
+            <div class="metric-cell skeleton-cell"><span></span><strong></strong></div><div class="metric-cell skeleton-cell"><span></span><strong></strong></div><div class="metric-cell skeleton-cell"><span></span><strong></strong></div><div class="metric-cell skeleton-cell"><span></span><strong></strong></div>
           </div>
-          <div id="task-list" class="task-list" aria-live="polite" aria-busy="true">
-            <div class="task-skeleton"></div>
-            <div class="task-skeleton"></div>
+        </section>
+
+        <section class="dashboard-overview" aria-label="Ringkasan aktivitas terbaru">
+          <article class="overview-panel">
+            <div class="overview-panel__head">
+              <div><p class="section-index">Terbaru</p><h2>Arsip terkini</h2></div>
+              <button class="text-action" type="button" data-nav-action="archives">Lihat semua</button>
+            </div>
+            <div id="recent-archive-list" class="compact-list" aria-live="polite">
+              <div class="loading-line">Memuat arsip terbaru…</div>
+            </div>
+          </article>
+          <article class="overview-panel">
+            <div class="overview-panel__head">
+              <div><p class="section-index">Antrean</p><h2>Perlu tindakan</h2></div>
+              <button class="text-action" type="button" data-nav-action="verification" data-permission="verify">Buka antrean</button>
+            </div>
+            <div id="dashboard-task-list" class="compact-list" aria-live="polite">
+              <div class="loading-line">Memuat tugas…</div>
+            </div>
+          </article>
+        </section>
+        </section>
+
+        <section id="view-archives" class="app-view" data-app-view="archives" hidden>
+          <div class="module-panel">
+            <div class="module-header">
+              <div><p class="eyebrow">Pengelolaan dokumen</p><h1>Arsip</h1><p>Telusuri, saring, dan buka rekod sesuai cakupan akses Anda.</p></div>
+              <button id="archive-upload-button" class="button button--primary" type="button">Unggah arsip</button>
+            </div>
+        <section id="workbench" class="workbench workbench--single" aria-label="Daftar arsip">
+          <div id="archive-workspace" class="archive-workspace" tabindex="-1">
+            <div class="section-heading section-heading--workspace"><div><p class="section-index">Koleksi</p><h2 id="archive-title">Daftar arsip</h2></div><p id="archive-result-summary" class="result-count" aria-live="polite">Memuat arsip…</p></div>
+            <div class="archive-toolbar" role="search" aria-label="Cari dan saring arsip">
+              <label class="search-field"><span class="sr-only">Cari arsip</span><span class="search-field__mark" aria-hidden="true"></span><input id="archive-search" type="search" autocomplete="off" placeholder="Cari judul, nomor, atau tag"></label>
+              <label class="select-field"><span>Status</span><select id="status-filter"><option value="">Semua status</option><option value="DRAFT">Draft</option><option value="PENDING_VERIFICATION">Menunggu verifikasi</option><option value="FINAL">Tersimpan</option></select></label>
+              <label class="select-field select-field--compact"><span>Baris</span><select id="page-size"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+            </div>
+            <div id="archive-list" class="archive-list" aria-live="polite" aria-busy="true"><div class="list-skeleton" aria-hidden="true"><i></i><span></span><b></b></div><div class="list-skeleton" aria-hidden="true"><i></i><span></span><b></b></div><div class="list-skeleton" aria-hidden="true"><i></i><span></span><b></b></div></div>
+            <nav class="pagination" aria-label="Navigasi halaman arsip"><button id="previous-page" class="button button--secondary" type="button" disabled>Sebelumnya</button><span id="page-label" aria-live="polite">Halaman 1 dari 1</span><button id="next-page" class="button button--secondary" type="button" disabled>Berikutnya</button></nav>
           </div>
-        </aside>
-      </div>
-    </main>
+        </section>
+          </div>
+        </section>
 
-    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+        <section id="view-verification" class="app-view" data-app-view="verification" hidden>
+          <div class="module-panel">
+            <div class="module-header">
+              <div><p class="eyebrow">Kontrol mutu arsip</p><h1>Verifikasi arsip</h1><p>Periksa metadata dan berkas yang diajukan sebelum arsip dinyatakan tersimpan.</p></div>
+              <span id="task-count" class="module-count">0 tugas</span>
+            </div>
+            <div id="task-rail" class="approval-workspace" tabindex="-1">
+              <div class="approval-table-head" aria-hidden="true"><span>Dokumen</span><span>Batas waktu</span><span>Status</span></div>
+              <div id="task-list" class="task-list task-list--page" aria-live="polite" aria-busy="true"><div class="task-skeleton" aria-hidden="true"><span></span><i></i></div><div class="task-skeleton" aria-hidden="true"><span></span><i></i></div></div>
+            </div>
+          </div>
+        </section>
 
-    <footer class="app-footer">
-      <span><?= appName ?> v<?= appVersion ?></span>
-      <span>Google Workspace Internal</span>
-    </footer>
+        <section id="view-storage" class="app-view" data-app-view="storage" hidden>
+          <div class="module-panel">
+            <div class="module-header"><div><p class="eyebrow">Arsip fisik</p><h1>Lokasi penyimpanan</h1><p>Kelola hierarki ruang, rak, tingkat, dan posisi penyimpanan.</p></div><div class="module-header__actions"><button class="button button--secondary" type="button" data-open-barcode-scan>Pindai identitas</button><button class="button button--primary" type="button" data-admin-add="location">Tambah lokasi</button></div></div>
+            <div class="capacity-strip"><div><span>Total lokasi</span><strong id="location-total">0</strong></div><div><span>Posisi aktif</span><strong id="position-total">0</strong></div><div><span>Posisi penuh</span><strong id="position-full">0</strong></div></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Kode</th><th>Nama</th><th>Tipe</th><th>Induk</th><th>Kapasitas</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="location-table-body"><tr><td colspan="7">Memuat lokasi…</td></tr></tbody></table></div>
+          </div>
+        </section>
 
-    <?!= include_('scripts'); ?>
-  </body>
+        <section id="view-boxes" class="app-view" data-app-view="boxes" hidden>
+          <div class="module-panel">
+            <div class="module-header"><div><p class="eyebrow">Arsip fisik</p><h1>Boks & barcode</h1><p>Tempatkan boks pada posisi rak dan cetak label Code 128.</p></div><div class="module-header__actions"><button class="button button--secondary" type="button" data-open-barcode-scan>Pindai identitas</button><button class="button button--primary" type="button" data-admin-add="box">Tambah boks</button></div></div>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Kode boks</th><th>Label</th><th>Posisi</th><th>Isi</th><th>Status</th><th>Barcode</th><th>Aksi</th></tr></thead><tbody id="box-table-body"><tr><td colspan="7">Memuat boks…</td></tr></tbody></table></div>
+          </div>
+        </section>
+
+        <section id="view-divisions" class="app-view" data-app-view="divisions" hidden>
+          <div class="module-panel">
+            <div class="module-header"><div><p class="eyebrow">Master data</p><h1>Divisi dan unit</h1><p>Kelola dua daftar organisasi yang berdiri sendiri tanpa relasi induk-anak.</p></div></div>
+            <div class="admin-split">
+              <section class="admin-section"><div class="admin-section__head"><h2>Divisi</h2><button class="button button--secondary" type="button" data-admin-add="division">Tambah divisi</button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Kode</th><th>Nama</th><th>Format nomor</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="division-table-body"></tbody></table></div></section>
+              <section class="admin-section"><div class="admin-section__head"><h2>Unit</h2><button class="button button--secondary" type="button" data-admin-add="unit">Tambah unit</button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Kode</th><th>Nama</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="unit-table-body"></tbody></table></div></section>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-categories" class="app-view" data-app-view="categories" hidden>
+          <div class="module-panel"><div class="module-header"><div><p class="eyebrow">Master data</p><h1>Kategori arsip</h1><p>Kelola klasifikasi yang digunakan pada metadata arsip.</p></div><button class="button button--primary" type="button" data-admin-add="category">Tambah kategori</button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Kode</th><th>Nama</th><th>Deskripsi</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="category-table-body"></tbody></table></div></div>
+        </section>
+
+        <section id="view-users" class="app-view" data-app-view="users" hidden>
+          <div class="module-panel"><div class="module-header"><div><p class="eyebrow">Master data</p><h1>Pengguna</h1><p>Kelola akun, role, lingkup divisi atau unit, dan status akses.</p></div><button class="button button--primary" type="button" data-admin-add="user">Tambah pengguna</button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Lingkup organisasi</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="user-table-body"></tbody></table></div></div>
+        </section>
+
+        <section id="view-audit" class="app-view" data-app-view="audit" hidden>
+          <div class="module-panel"><div class="module-header"><div><p class="eyebrow">Tata kelola</p><h1>Audit log</h1><p>Jejak tindakan penting bersifat baca-saja dan dipaginasi.</p></div></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Waktu</th><th>Pelaku</th><th>Aksi</th><th>Entitas</th><th>Request ID</th></tr></thead><tbody id="audit-table-body"><tr><td colspan="5">Memuat audit…</td></tr></tbody></table></div><nav class="pagination"><button id="audit-previous" class="button button--secondary" type="button" disabled>Sebelumnya</button><span id="audit-page-label">Halaman 1 dari 1</span><button id="audit-next" class="button button--secondary" type="button" disabled>Berikutnya</button></nav></div>
+        </section>
+
+        <section id="view-settings" class="app-view" data-app-view="settings" hidden>
+          <div class="module-panel"><div class="module-header"><div><p class="eyebrow">Tata kelola</p><h1>Pengaturan</h1><p>Konfigurasi operasional non-rahasia. Secret tetap berada di Script Properties.</p></div></div><div id="settings-list" class="settings-list"><div class="loading-line">Memuat pengaturan…</div></div></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <aside id="notification-panel" class="notification-panel" aria-labelledby="notification-title" hidden>
+    <div class="panel-head"><div><p class="section-index">Pusat informasi</p><h2 id="notification-title">Notifikasi</h2></div><button id="notification-close" class="icon-close" type="button" aria-label="Tutup notifikasi">×</button></div>
+    <div id="notification-list" class="notification-list" aria-live="polite"></div>
+  </aside>
+
+  <dialog id="archive-dialog" class="record-dialog" aria-labelledby="archive-dialog-title">
+    <div class="dialog-head"><div><p id="archive-dialog-number" class="section-index">Detail arsip</p><h2 id="archive-dialog-title">Memuat arsip</h2></div><button class="icon-close" type="button" data-dialog-close="archive-dialog" aria-label="Tutup detail arsip">×</button></div>
+    <div id="archive-dialog-body" class="record-detail" aria-live="polite"></div>
+    <div class="dialog-actions"><button class="button button--secondary" type="button" data-dialog-close="archive-dialog">Tutup</button><button id="archive-preview-button" class="button button--primary" type="button" disabled>Buka di Google Drive</button></div>
+  </dialog>
+
+  <dialog id="upload-dialog" class="record-dialog record-dialog--compact" aria-labelledby="upload-dialog-title">
+    <div class="dialog-head"><div><p class="section-index">Fitur belum dihubungkan</p><h2 id="upload-dialog-title">Unggah Drive belum aktif</h2></div><button class="icon-close" type="button" data-dialog-close="upload-dialog" aria-label="Tutup informasi unggah">×</button></div>
+    <div class="integration-note"><p>Pada versi GAS ini tombol belum mengirim file. File nantinya diunggah langsung dari browser ke Shared Drive melalui endpoint Vercel agar stabil dan tidak membebani Apps Script.</p><ol><li><strong>Shared Drive:</strong> buat folder induk Arsiva-LM dan salin Folder ID.</li><li><strong>Google Cloud:</strong> buat service account, aktifkan Drive API, lalu beri akses service account ke Shared Drive.</li><li><strong>Vercel:</strong> simpan credential dan Folder ID sebagai Environment Variables.</li><li><strong>Endpoint upload:</strong> Vercel membuat sesi resumable; browser mengirim file ke Drive; GAS memverifikasi file sebelum membuat Draft.</li><li><strong>Verifikasi petugas:</strong> petugas memeriksa Draft, kemudian menerima sebagai arsip Tersimpan atau mengembalikannya untuk revisi.</li></ol><p class="caption">Tahap ini baru diperlukan saat frontend Vercel mulai dikerjakan. Sekarang tombol ini hanya menjelaskan dependensinya.</p></div>
+    <div class="dialog-actions"><button class="button button--primary" type="button" data-dialog-close="upload-dialog">Saya mengerti</button></div>
+  </dialog>
+
+  <dialog id="admin-dialog" class="record-dialog" aria-labelledby="admin-dialog-title">
+    <form id="admin-form" method="dialog">
+      <div class="dialog-head"><div><p id="admin-dialog-kicker" class="section-index">Master data</p><h2 id="admin-dialog-title">Tambah data</h2></div><button class="icon-close" type="button" data-dialog-close="admin-dialog" aria-label="Tutup formulir">×</button></div>
+      <div id="admin-form-fields" class="admin-form-fields"></div>
+      <div id="admin-form-error" class="form-error" role="alert" hidden></div>
+      <div class="dialog-actions"><button class="button button--secondary" type="button" data-dialog-close="admin-dialog">Batal</button><button id="admin-save-button" class="button button--primary" type="submit">Simpan</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="barcode-scan-dialog" class="record-dialog record-dialog--compact" aria-labelledby="barcode-scan-title">
+    <form id="barcode-scan-form">
+      <div class="dialog-head"><div><p class="section-index">Penyimpanan fisik</p><h2 id="barcode-scan-title">Pindai identitas</h2></div><button class="icon-close" type="button" data-dialog-close="barcode-scan-dialog" aria-label="Tutup pemindai">×</button></div>
+      <div class="scan-panel"><label class="form-field"><span>Kode barcode</span><input id="barcode-scan-input" name="barcode" type="text" autocomplete="off" placeholder="Pindai LOC-… atau BOX-…" required></label><p>Hubungkan scanner USB/Bluetooth, arahkan kursor ke kolom, lalu pindai. Anda juga dapat mengetik kode secara manual.</p><div id="barcode-scan-result" class="scan-result" aria-live="polite"></div></div>
+      <div class="dialog-actions"><button class="button button--secondary" type="button" data-dialog-close="barcode-scan-dialog">Tutup</button><button class="button button--primary" type="submit">Cari identitas</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <?!= include_('scripts'); ?>
+  <?!= include_('admin-scripts'); ?>
+</body>
 </html>
-
