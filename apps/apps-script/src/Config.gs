@@ -4,7 +4,7 @@
  */
 const APP = Object.freeze({
   NAME: 'Arsiva-LM',
-  VERSION: '0.1.0',
+  VERSION: '0.5.0',
   DEFAULT_PAGE_SIZE: 20,
   MAX_PAGE_SIZE: 100,
   MASTER_CACHE_SECONDS: 300,
@@ -17,6 +17,8 @@ const PROPERTY_KEYS = Object.freeze({
   ADMIN_EMAIL: 'ADMIN_EMAIL',
   SPREADSHEET_ID: 'SPREADSHEET_ID',
   SHARED_DRIVE_ROOT_FOLDER_ID: 'SHARED_DRIVE_ROOT_FOLDER_ID',
+  APPS_SCRIPT_SHARED_SECRET: 'APPS_SCRIPT_SHARED_SECRET',
+  APPS_SCRIPT_PREVIOUS_SECRET: 'APPS_SCRIPT_PREVIOUS_SECRET',
   ALLOWED_GOOGLE_DOMAINS: 'ALLOWED_GOOGLE_DOMAINS',
   APP_ENV: 'APP_ENV'
 });
@@ -40,12 +42,18 @@ const SHEETS = Object.freeze({
   IDEMPOTENCY_KEYS: 'IdempotencyKeys',
   OPERATIONS: 'Operations',
   SEARCH_INDEX: 'SearchIndex',
-  REPORT_JOBS: 'ReportJobs'
+  REPORT_JOBS: 'ReportJobs',
+  STORAGE_LOCATIONS: 'StorageLocations',
+  STORAGE_BOXES: 'StorageBoxes',
+  ARCHIVE_PLACEMENTS: 'ArchivePlacements',
+  PHYSICAL_MOVEMENTS: 'PhysicalMovements'
 });
 
 const ROLES = Object.freeze({
   SUPER_ADMIN: 'SUPER_ADMIN',
   ADMIN_DIVISION: 'ADMIN_DIVISION',
+  VERIFIER: 'VERIFIER',
+  // Nilai lama tetap dikenali agar data sebelum v0.5.0 tidak langsung rusak.
   APPROVER_L1: 'APPROVER_L1',
   APPROVER_L2: 'APPROVER_L2',
   USER: 'USER'
@@ -53,6 +61,8 @@ const ROLES = Object.freeze({
 
 const ARCHIVE_STATUS = Object.freeze({
   DRAFT: 'DRAFT',
+  PENDING_VERIFICATION: 'PENDING_VERIFICATION',
+  // Status lama tetap dibaca selama masa transisi schema.
   PENDING_L1: 'PENDING_L1',
   PENDING_L2: 'PENDING_L2',
   FINAL: 'FINAL'
@@ -148,14 +158,32 @@ const SHEET_SCHEMAS = Object.freeze({
     'id', 'requested_by_user_id', 'format', 'filters_json', 'status',
     'drive_file_id', 'expires_at', 'failure_reason', 'created_at',
     'started_at', 'completed_at', 'updated_at', 'row_version'
+  ],
+  StorageLocations: [
+    'id', 'code', 'name', 'type', 'parent_id', 'capacity', 'status', 'notes',
+    'barcode_value', 'created_at', 'updated_at', 'row_version'
+  ],
+  StorageBoxes: [
+    'id', 'code', 'label', 'location_id', 'capacity', 'occupancy', 'status',
+    'barcode_value', 'created_at', 'updated_at', 'row_version'
+  ],
+  ArchivePlacements: [
+    'id', 'archive_id', 'box_id', 'location_id', 'placed_at',
+    'placed_by_user_id', 'removed_at', 'row_version'
+  ],
+  PhysicalMovements: [
+    'id', 'archive_id', 'box_id', 'from_location_id', 'to_location_id',
+    'action', 'actor_user_id', 'occurred_at', 'notes'
   ]
 });
 
 const SETTINGS_DEFAULTS = Object.freeze([
-  ['SCHEMA_VERSION', '1', 'Versi schema Google Sheets'],
+  ['SCHEMA_VERSION', '3', 'Versi schema Google Sheets'],
   ['DATA_VERSION', '1', 'Versi invalidasi cache'],
   ['MAX_FILE_SIZE_BYTES', '52428800', 'Maksimum file 50 MB'],
   ['SEARCH_CACHE_SECONDS', '300', 'TTL cache pencarian/master data'],
-  ['REMINDER_HOURS', '12', 'Jam sebelum reminder approval'],
-  ['ESCALATION_HOURS', '24', 'Jam sebelum alternate approver']
+  ['REMINDER_HOURS', '12', 'Jam sebelum pengingat verifikasi'],
+  ['ESCALATION_HOURS', '24', 'Jam sebelum eskalasi verifikasi'],
+  ['PHYSICAL_CAPACITY_WARNING_PERCENT', '80', 'Batas peringatan kapasitas lokasi fisik'],
+  ['PRIMARY_STORAGE_LOCATION_NAME', 'Ruang Arsip Terpusat 01', 'Nama ruang arsip utama']
 ]);

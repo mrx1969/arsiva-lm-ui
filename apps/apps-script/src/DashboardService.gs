@@ -1,9 +1,9 @@
-function buildDashboardBootstrap_() {
+function buildDashboardBootstrap_(actorOverride) {
   const db = getDatabase_();
-  const user = getCurrentUser_(db);
+  const user = actorOverride || getCurrentUser_(db);
   const version = getDataVersion_(db);
   const cache = CacheService.getUserCache();
-  const cacheKey = 'dashboard:' + user.id + ':v' + version;
+  const cacheKey = 'dashboard:' + user.id + ':app' + APP.VERSION + ':v' + version;
   const cached = cache.get(cacheKey);
   if (cached) return JSON.parse(cached);
 
@@ -18,7 +18,7 @@ function buildDashboardBootstrap_() {
   );
   const visibleArchives = archivePage.rows;
   const allScopedArchives = getScopedArchiveSummary_(user, archives, grants);
-  const tasks = getDashboardTasks_(user, db);
+  const tasks = getDashboardTasks_(user, db, archives);
   const unreadNotifications = countUnreadNotifications_(user, db);
 
   const result = {
@@ -27,7 +27,7 @@ function buildDashboardBootstrap_() {
     permissions: buildPermissions_(user),
     master: master,
     stats: buildArchiveStats_(allScopedArchives),
-    approval_tasks: tasks.slice(0, 5),
+    verification_tasks: tasks.slice(0, 5),
     latest_archives: visibleArchives.slice(0, 10),
     unread_notifications: unreadNotifications,
     generated_at: nowIso_()
@@ -49,17 +49,25 @@ function getScopedArchiveSummary_(user, archives, grants) {
 }
 
 function buildArchiveStats_(archives) {
-  const stats = { total: 0, draft: 0, pending_l1: 0, pending_l2: 0, final: 0 };
+  const stats = { total: 0, draft: 0, pending_verification: 0, final: 0 };
   archives.forEach(function (archive) {
     stats.total += 1;
     const statusKey = String(archive.status || '').toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(stats, statusKey)) stats[statusKey] += 1;
+    if (statusKey === 'pending_verification' || statusKey === 'pending_l1' || statusKey === 'pending_l2') {
+      stats.pending_verification += 1;
+    } else if (Object.prototype.hasOwnProperty.call(stats, statusKey)) {
+      stats[statusKey] += 1;
+    }
   });
   return stats;
 }
 
-function getDashboardTasks_(user, spreadsheet) {
-  if (!hasRole_(user, [ROLES.SUPER_ADMIN, ROLES.APPROVER_L1, ROLES.APPROVER_L2])) return [];
+function getDashboardTasks_(user, spreadsheet, archives) {
+  if (!hasRole_(user, [ROLES.SUPER_ADMIN, ROLES.VERIFIER, ROLES.APPROVER_L1, ROLES.APPROVER_L2])) return [];
+
+  const archiveLookup = new Map((archives || []).map(function (archive) {
+    return [String(archive.id), archive];
+  }));
 
   return readObjects_(SHEETS.APPROVAL_TASKS, spreadsheet)
     .filter(function (task) {
@@ -70,9 +78,12 @@ function getDashboardTasks_(user, spreadsheet) {
       return String(left.due_at || '').localeCompare(String(right.due_at || ''));
     })
     .map(function (task) {
+      const archive = archiveLookup.get(String(task.archive_id)) || {};
       return {
         id: task.id,
         archive_id: task.archive_id,
+        archive_number: archive.archive_number || '',
+        archive_title: archive.title || '',
         level: Number(task.level),
         due_at: task.due_at,
         status: task.status
@@ -89,8 +100,7 @@ function countUnreadNotifications_(user, spreadsheet) {
 function buildPermissions_(user) {
   return {
     can_upload: hasRole_(user, [ROLES.SUPER_ADMIN, ROLES.ADMIN_DIVISION, ROLES.USER]),
-    can_approve_l1: hasRole_(user, [ROLES.SUPER_ADMIN, ROLES.APPROVER_L1]),
-    can_approve_l2: hasRole_(user, [ROLES.SUPER_ADMIN, ROLES.APPROVER_L2]),
+    can_verify: hasRole_(user, [ROLES.SUPER_ADMIN, ROLES.VERIFIER, ROLES.APPROVER_L1, ROLES.APPROVER_L2]),
     can_manage_master: user.role === ROLES.SUPER_ADMIN,
     can_view_audit: user.role === ROLES.SUPER_ADMIN
   };

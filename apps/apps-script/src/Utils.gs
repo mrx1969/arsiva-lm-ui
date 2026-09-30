@@ -75,6 +75,18 @@ function parseJsonArray_(value) {
   }
 }
 
+function parseJsonObject_(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (!value) return {};
+
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
 function serializeForClient_(value) {
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map(serializeForClient_);
@@ -112,3 +124,26 @@ function computeSha256_(text) {
   }).join('');
 }
 
+function base64UrlEncode_(bytes) {
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/g, '');
+}
+
+function computeHmacSha256Base64Url_(text, secret) {
+  const bytes = Utilities.computeHmacSha256Signature(
+    String(text),
+    String(secret),
+    Utilities.Charset.UTF_8
+  );
+  return base64UrlEncode_(bytes);
+}
+
+function timingSafeEqual_(left, right) {
+  const a = String(left || '');
+  const b = String(right || '');
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
