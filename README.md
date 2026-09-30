@@ -336,8 +336,8 @@ Jika Google meminta autentikasi ulang (`invalid_rapt`), jalankan `clasp login`
 dan pilih akun pemilik/editor project di browser.
 Lihat [panduan koneksi dan status deployment GAS](apps/apps-script/README.md#koneksi-project-dan-proses-deployment)
 untuk urutan backup, push, setup database, dan koneksi Vercel. Perlu diperhatikan:
-deployment `USER_ACCESSING` / `DOMAIN` di bawah adalah untuk UI GAS pengujian;
-server Vercel memerlukan pengaturan akses API yang berbeda.
+deployment `USER_ACCESSING` / `DOMAIN` merupakan mode lama untuk UI GAS pengujian;
+production sekarang menggunakan mode API pemilik sebagaimana bagian 9.6.
 
 Jika membuat project baru:
 
@@ -438,18 +438,24 @@ Gunakan aturan berikut:
 
 Jangan membuka Spreadsheet dengan opsi “Anyone with the link”.
 
-### 9.6 Deploy Web App GAS untuk pengujian
+### 9.6 Deploy API GAS untuk Vercel
 
 1. Klik **Deploy → New deployment**.
 2. Pilih **Web app**.
-3. Description: `Arsiva-LM v0.5.0 test`.
-4. Execute as: **User accessing the web app**.
-5. Who has access: domain Google Workspace lembaga.
+3. Pastikan `prepareVercelBridge` sudah dijalankan dan `API_ONLY=true` tersedia di Script Properties.
+4. Execute as: **Me (pemilik deployment yang memiliki akses Spreadsheet)**.
+5. Who has access: **Anyone**, termasuk request tanpa sesi Google. Data tetap memerlukan signature HMAC; Spreadsheet tetap privat.
 6. Klik **Deploy**.
 7. Salin URL `/exec` dan Deployment ID.
-8. Buka URL menggunakan akun yang tercatat pada tab `Users`.
+8. Isi URL `/exec` dan secret yang sama pada environment Production Vercel, lalu redeploy Vercel.
+9. Login aplikasi sebagai Super Admin dan buka Pengaturan. Status koneksi harus menyatakan **Spreadsheet terhubung; akses API aktif**.
 
 Konfigurasi ini sesuai manifest `appsscript.json`. Pilihan execute-as memengaruhi permission resource; lihat [dokumentasi Web Apps Apps Script](https://developers.google.com/apps-script/guides/web).
+
+Pada 30 September 2026, API versi 11 dan koneksi Production Vercel sudah diuji
+berhasil. Izin Spreadsheet diperiksa melalui Drive API: hanya pemilik yang
+memiliki akses, tanpa akses publik/domain. Lihat [hasil verifikasi dan langkah
+aktivasi](apps/apps-script/README.md#aktivasi-api-setelah-setup-database).
 
 ### 9.7 Update deployment GAS
 
@@ -684,7 +690,7 @@ Referensi: [Vercel custom domain setup](https://vercel.com/docs/domains/set-up-c
 
 ### Pengguna GAS tidak dapat membaca Spreadsheet/Drive
 
-Deployment test saat ini berjalan sebagai user yang mengakses. Berikan akses hanya kepada akun penguji, atau tunggu integrasi production Vercel/server identity. Jangan membuka database ke publik.
+Deployment API production berjalan sebagai pemilik. Pastikan akun pemilik dapat membuka Spreadsheet, `API_ONLY=true` aktif, dan secret GAS sama dengan environment Production Vercel. Jangan membuka database ke publik.
 
 ### Build Vercel gagal
 

@@ -32,10 +32,13 @@ Urutan sinkronisasi:
    Nilai secret harus sama dengan Script Property GAS dan hanya digunakan di server.
 9. Uji dashboard, daftar arsip, dan master data menggunakan akun aplikasi.
 
-**Status 30 September 2026:** autentikasi clasp diperbarui, 19 file berhasil
+**Tahap awal 30 September 2026:** autentikasi clasp diperbarui, 19 file berhasil
 dipush, dan deployment yang sudah ada berhasil diperbarui dari versi 8 ke
 versi 9 (`ARSIVA LM - Vercel signed data bridge`). Pemeriksaan syntax seluruh
 file GAS, JSON manifest, dan `git diff --check` berhasil.
+
+Tahap ini dilanjutkan hingga versi 11 API production; lihat hasil terbaru pada
+bagian aktivasi API di bawah.
 
 Deployment ID:
 `AKfycbxfi23I5Lf_kcBc_t_EBet-Pq4lFdI-7whytv-sExEUwCC6ZimRE2S9W9u8hp3ye23lng`.
@@ -60,9 +63,11 @@ production masih perlu dikonfigurasi sesuai bagian berikut.
 
 ### Perbedaan deployment UI GAS dan API Vercel
 
-Manifest saat ini menggunakan `USER_ACCESSING` dan `DOMAIN`, untuk pengujian
-UI GAS dengan akun Workspace. Server Vercel tidak membawa sesi login Google
-pengguna sehingga konfigurasi ini belum dapat digunakan sebagai API Vercel.
+Manifest production saat ini menggunakan `USER_DEPLOYING` dan
+`ANYONE_ANONYMOUS`, dengan Script Property `API_ONLY=true`. Server Vercel
+memanggil API menggunakan signature HMAC; halaman HTMLService tidak disajikan
+pada mode ini. Mode lama `USER_ACCESSING` / `DOMAIN` hanya cocok untuk
+pengujian UI GAS terpisah dan tidak menerima panggilan server Vercel.
 
 Untuk API production, dibutuhkan deployment yang berjalan sebagai pemilik script
 dan dapat menerima request server tanpa sesi Google. Request `doPost` wajib tetap
@@ -119,11 +124,32 @@ npm run build
 ```
 
 Pada 30 September 2026, lima tes signature/replay/akses dan build Next.js lulus.
-Source bridge dengan guard API dan health check sudah dipush sebagai versi 10;
-deployment yang sama telah diperbarui ke versi 10 dengan akses domain tetap.
-Setup database telah dilaporkan selesai oleh administrator; Script Properties
-`SPREADSHEET_ID` tersedia. Aktivasi API dan environment Vercel masih harus
-dikonfirmasi dengan tes koneksi setelah konfigurasinya diterapkan.
+Deployment API production kini menggunakan **versi 11** (`ARSIVA LM - HMAC API
+production`). Administrator telah membuat secret dan mengaktifkan mode API.
+`APPS_SCRIPT_SHARED_SECRET` serta `APPS_SCRIPT_API_URL` sudah disimpan sebagai
+environment **Production** Vercel; secret tidak disimpan di GitHub atau browser
+aplikasi. Vercel telah diredeploy menggunakan environment tersebut.
+
+Hasil pemeriksaan production pada 30 September 2026:
+
+- `GET /exec` hanya mengembalikan informasi layanan, tanpa data arsip.
+- `POST /exec` tanpa signature ditolak dengan `SIGNATURE_INVALID` dan `data:null`.
+- Pengaturan menyatakan `Spreadsheet terhubung; akses API aktif` setelah
+  pemeriksaan HMAC yang berhasil.
+- Dashboard, Arsip, Divisi, Unit, dan Lokasi memuat data GAS tanpa fallback.
+- Permintaan halaman Pengaturan tanpa sesi diarahkan ke login.
+- Google Drive Permissions API menunjukkan hanya izin `user:owner` pada
+  Spreadsheet database, tanpa izin `anyone` atau `domain`. Izin berbagi tidak
+  diubah selama aktivasi API.
+
+Tes halaman production menggunakan sesi diagnostik Super Admin lima menit
+tanpa reset password atau perubahan akun. Token hanya di memori dan tidak
+dicetak/disimpan. Untuk mengulang dengan service account lokal yang berwenang:
+
+```powershell
+cd apps/web
+node --env-file=.env.local scripts/verify-production-bridge.mjs
+```
 
 ## Susunan File
 
@@ -152,7 +178,7 @@ src/
 
 ## Entry Point
 
-- `doGet()` menyajikan HTMLService UI.
+- `doGet()` hanya memberi informasi layanan pada mode API production; HTMLService tersedia pada mode UI pengujian.
 - `doPost()` menerima request internal dari Vercel BFF dengan HMAC signature.
 - `setupProject()` membuat/memeriksa spreadsheet dan tab.
 - `getDashboardBootstrap()` adalah satu round-trip untuk data kritis dashboard.
@@ -181,6 +207,7 @@ Action internal tahap awal:
 
 | Action | Kegunaan |
 |---|---|
+| `system.health` | Memeriksa akses database dan mode API, khusus Super Admin |
 | `dashboard.bootstrap` | Statistik, arsip terbaru, task verifikasi |
 | `archives.list` | Daftar arsip paginated |
 | `verification_tasks.list` | Antrean verifikasi |

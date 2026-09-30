@@ -50,7 +50,7 @@ export default async function DashboardPage() {
 
       <section className="status-panel">
         <div className="status-mark"><span>✓</span></div>
-        <div><span className="eyebrow">Status integrasi</span><h2>Login production sudah aktif</h2><p>Ruang kerja aplikasi sudah disiapkan di Vercel. Tahap berikutnya adalah menyambungkan API GAS/Spreadsheet agar data operasional menggantikan placeholder ini.</p></div>
+        <div><span className="eyebrow">Status integrasi</span><h2>{workspace.source === "gas" ? "Data arsip sudah terhubung" : "Koneksi data belum tersedia"}</h2><p>{workspace.source === "gas" ? "Dashboard membaca Spreadsheet melalui server aplikasi. Data ditampilkan sesuai cakupan akses akun Anda." : "Data operasional belum dapat dimuat. Super Admin dapat memeriksa koneksi melalui menu Pengaturan."}</p></div>
         {session.role === "SUPER_ADMIN" && <Link className="primary-button primary-button--fit" href="/admin/users">Kelola pengguna</Link>}
       </section>
     </AppShell>
